@@ -9,13 +9,16 @@ import (
 )
 
 type ServerConfig struct {
-	DebugMode           bool        `yaml:"debugMode"`
-	Db                  *DbConfig   `yaml:"db"`
-	SignKey             string      `yaml:"signKey"`
-	DeviceEnrollmentKey string      `yaml:"deviceEnrollmentKey"`
-	HttpConfig          *HttpConfig `yaml:"httpConfig"`
-	SmtpConfig          *SmtpConfig `yaml:"smtpConfig"`
-	JobsConfig          *JobsConfig `yaml:"jobsConfig"`
+	DebugMode             bool        `yaml:"debugMode"`
+	Db                    *DbConfig   `yaml:"db"`
+	SignKey               string      `yaml:"signKey"`
+	DeviceEnrollmentKey   string      `yaml:"deviceEnrollmentKey"`
+	ProvisioningSignSeed  string      `yaml:"provisioningSignSeed"`
+	ProvisioningSecretKey string      `yaml:"provisioningSecretKey"`
+	ProvisioningKeyId     string      `yaml:"provisioningKeyId"`
+	HttpConfig            *HttpConfig `yaml:"httpConfig"`
+	SmtpConfig            *SmtpConfig `yaml:"smtpConfig"`
+	JobsConfig            *JobsConfig `yaml:"jobsConfig"`
 }
 
 type DbConfig struct {
@@ -97,6 +100,18 @@ func GetServerConfig() *ServerConfig {
 func applyEnvironment(cfg *ServerConfig) {
 	if enrollmentKey := os.Getenv("RUD_DEVICE_ENROLLMENT_KEY_B64"); enrollmentKey != "" {
 		cfg.DeviceEnrollmentKey = enrollmentKey
+	}
+	if value := os.Getenv("RUD_CFG_SIGN_SEED_B64"); value != "" {
+		cfg.ProvisioningSignSeed = value
+	}
+	if value := os.Getenv("RUD_CFG_SECRETBOX_KEY_B64"); value != "" {
+		cfg.ProvisioningSecretKey = value
+	}
+	if value := os.Getenv("RUD_CFG_KEY_ID"); value != "" {
+		cfg.ProvisioningKeyId = value
+	}
+	if cfg.ProvisioningKeyId == "" {
+		cfg.ProvisioningKeyId = "android-v1"
 	}
 }
 

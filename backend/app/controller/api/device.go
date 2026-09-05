@@ -218,10 +218,30 @@ func (c *DeviceController) PostHeartbeat() mvc.Result {
 	}); err != nil {
 		return responseError(iris.StatusInternalServerError, "failed to update heartbeat")
 	}
-	return mvc.Response{Object: iris.Map{
-		"modified_at": time.Now().Unix(),
-		"strategy":    versionhelper.ResolveCapability(NormalizeReportedVersion(form.Version, form.Ver)),
-	}}
+	if status := form.UnattendedStatus; status != nil {
+		if len(status.LastError) > 255 {
+			status.LastError = status.LastError[:255]
+		}
+		_, _ = c.Db.ID(device.Id).Cols("applied_revision", "unattended_status", "root_executor", "root_available", "screen_capture_ready", "accessibility_ready", "service_running", "unattended_error", "unattended_reported_at").Update(&model.Device{
+			AppliedRevision: status.PolicyRevision, UnattendedStatus: status.Status,
+			RootExecutor: status.RootExecutor, RootAvailable: status.RootAvailable,
+			ScreenCaptureReady: status.ScreenCaptureReady, AccessibilityReady: status.AccessibilityReady,
+			ServiceRunning: status.ServiceRunning, UnattendedError: status.LastError,
+			UnattendedReportedAt: time.Now(),
+		})
+	}
+	capability := versionhelper.ResolveCapability(NormalizeReportedVersion(form.Version, form.Ver))
+	strategy := iris.Map{"translate_mode": capability.TranslateMode}
+	response := iris.Map{"modified_at": device.PolicyRevision, "strategy": strategy}
+	if device.PolicyRevision > form.ModifiedAt || device.PolicyRevision > device.AppliedRevision {
+		envelope, err := buildPolicyEnvelope(device, c.ServerConfig)
+		if err != nil {
+			return responseError(iris.StatusServiceUnavailable, err.Error())
+		}
+		strategy["extra"] = iris.Map{"android_provisioning": envelope}
+		response["strategy"] = strategy
+	}
+	return mvc.Response{Object: response}
 }
 
 func (c *DeviceController) PostSysinfo() mvc.Result {

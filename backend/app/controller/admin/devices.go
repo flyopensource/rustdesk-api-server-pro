@@ -16,6 +16,41 @@ type DevicesController struct {
 
 func (c *DevicesController) BeforeActivation(b mvc.BeforeActivation) {
 	b.Handle("GET", "/devices/list", "HandleList")
+	b.Handle("PUT", "/devices/unattended", "HandleUnattended")
+}
+
+func (c *DevicesController) HandleUnattended() mvc.Result {
+	var form struct {
+		Id          int    `json:"id"`
+		Enabled     bool   `json:"enabled"`
+		RootCommand string `json:"root_command"`
+	}
+	if err := c.Ctx.ReadJSON(&form); err != nil || form.Id <= 0 {
+		return c.Error(nil, "DataError")
+	}
+	if form.RootCommand == "" {
+		form.RootCommand = "auto"
+	}
+	if form.RootCommand != "auto" && form.RootCommand != "su" && form.RootCommand != "testsu" && form.RootCommand != "disabled" {
+		return c.Error(nil, "InvalidRootCommand")
+	}
+	device := model.Device{}
+	has, err := c.Db.ID(form.Id).Get(&device)
+	if err != nil || !has {
+		return c.Error(nil, "DeviceNotFound")
+	}
+	device.UnattendedEnabled = form.Enabled
+	device.RootCommand = form.RootCommand
+	device.PolicyRevision++
+	_, err = c.Db.Table(new(model.Device)).ID(form.Id).Update(map[string]interface{}{
+		"unattended_enabled": form.Enabled,
+		"root_command":       form.RootCommand,
+		"policy_revision":    device.PolicyRevision,
+	})
+	if err != nil {
+		return c.Error(nil, err.Error())
+	}
+	return c.Success(iris.Map{"policy_revision": device.PolicyRevision}, "ok")
 }
 
 func (c *DevicesController) HandleList() mvc.Result {
@@ -51,15 +86,28 @@ func (c *DevicesController) HandleList() mvc.Result {
 	list := make([]iris.Map, 0)
 	for _, a := range deviceList {
 		list = append(list, iris.Map{
-			"id":          a.Id,
-			"rustdesk_id": a.RustdeskId,
-			"hostname":    a.Hostname,
-			"username":    a.Username,
-			"uuid":        a.Uuid,
-			"version":     a.Version,
-			"os":          a.Os,
-			"memory":      a.Memory,
-			"created_at":  a.CreatedAt.Format(config.TimeFormat),
+			"id":                     a.Id,
+			"rustdesk_id":            a.RustdeskId,
+			"hostname":               a.Hostname,
+			"username":               a.Username,
+			"uuid":                   a.Uuid,
+			"version":                a.Version,
+			"os":                     a.Os,
+			"memory":                 a.Memory,
+			"created_at":             a.CreatedAt.Format(config.TimeFormat),
+			"is_online":              a.IsOnline,
+			"unattended_enabled":     a.UnattendedEnabled,
+			"root_command":           a.RootCommand,
+			"policy_revision":        a.PolicyRevision,
+			"applied_revision":       a.AppliedRevision,
+			"unattended_status":      a.UnattendedStatus,
+			"root_executor":          a.RootExecutor,
+			"root_available":         a.RootAvailable,
+			"screen_capture_ready":   a.ScreenCaptureReady,
+			"accessibility_ready":    a.AccessibilityReady,
+			"service_running":        a.ServiceRunning,
+			"unattended_error":       a.UnattendedError,
+			"unattended_reported_at": a.UnattendedReportedAt.Format(config.TimeFormat),
 		})
 	}
 	return c.Success(iris.Map{

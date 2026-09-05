@@ -126,6 +126,19 @@ declare namespace Api {
       os: string;
       memory: string;
       created_at: string;
+      is_online: boolean;
+      unattended_enabled: boolean;
+      root_command: 'auto' | 'su' | 'testsu' | 'disabled';
+      policy_revision: number;
+      applied_revision: number;
+      unattended_status: string;
+      root_executor: string;
+      root_available: boolean;
+      screen_capture_ready: boolean;
+      accessibility_ready: boolean;
+      service_running: boolean;
+      unattended_error: string;
+      unattended_reported_at: string;
     }>;
     type DevicesList = Common.PaginatingQueryRecord<Device>;
     type DeviceSearchParams = CommonType.RecordNullable<
