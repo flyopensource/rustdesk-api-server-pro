@@ -9,14 +9,19 @@ import (
 
 func RequestLogger() iris.Handler {
 	return func(context iris.Context) {
-		if config.GetServerConfig().DebugMode && context.Request().RequestURI != "/api/heartbeat" {
+		if config.GetServerConfig().DebugMode && context.Path() != "/api/heartbeat" && context.Path() != "/api/device/heartbeat" {
 			requestInfo := fmt.Sprintf("▶ %s:%s", context.Method(), context.Request().RequestURI)
-			body, _ := context.GetBody()
 			context.Application().Logger().Info(requestInfo)
 			for header, value := range context.Request().Header {
+				if header == "Authorization" {
+					continue
+				}
 				fmt.Println(header+":", value)
 			}
-			fmt.Println(string(body))
+			if context.Path() != "/admin/auth/login" && context.Path() != "/admin/devices/profile" {
+				body, _ := context.GetBody()
+				fmt.Println(string(body))
+			}
 		}
 
 		context.Next()

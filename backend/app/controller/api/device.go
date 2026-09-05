@@ -230,10 +230,21 @@ func (c *DeviceController) PostHeartbeat() mvc.Result {
 			UnattendedReportedAt: time.Now(),
 		})
 	}
+	if status := form.ServerProfileStatus; status != nil {
+		if status.ActiveSource != "manual" && status.ActiveSource != "provisioned" && status.ActiveSource != "waiting" && status.ActiveSource != "public" {
+			status.ActiveSource = ""
+		}
+		_, _ = c.Db.ID(device.Id).Cols("profile_applied_revision", "profile_active_source", "profile_connected", "profile_reported_at").Update(&model.Device{
+			ProfileAppliedRevision: status.PolicyRevision,
+			ProfileActiveSource:    status.ActiveSource,
+			ProfileConnected:       status.Connected,
+			ProfileReportedAt:      time.Now(),
+		})
+	}
 	capability := versionhelper.ResolveCapability(NormalizeReportedVersion(form.Version, form.Ver))
 	strategy := iris.Map{"translate_mode": capability.TranslateMode}
 	response := iris.Map{"modified_at": device.PolicyRevision, "strategy": strategy}
-	if device.PolicyRevision > form.ModifiedAt || device.PolicyRevision > device.AppliedRevision {
+	if device.PolicyRevision > form.ModifiedAt {
 		envelope, err := buildPolicyEnvelope(device, c.ServerConfig)
 		if err != nil {
 			return responseError(iris.StatusServiceUnavailable, err.Error())

@@ -139,6 +139,16 @@ declare namespace Api {
       service_running: boolean;
       unattended_error: string;
       unattended_reported_at: string;
+      profile_enabled: boolean;
+      profile_id_server: string;
+      profile_relay_server: string;
+      profile_api_server: string;
+      profile_key_set: boolean;
+      profile_password_set: boolean;
+      profile_applied_revision: number;
+      profile_active_source: string;
+      profile_connected: boolean;
+      profile_reported_at: string;
     }>;
     type DevicesList = Common.PaginatingQueryRecord<Device>;
     type DeviceSearchParams = CommonType.RecordNullable<

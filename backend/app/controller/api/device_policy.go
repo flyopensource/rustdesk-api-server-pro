@@ -29,6 +29,14 @@ type unattendedPolicy struct {
 			RootCommand string `json:"root_command"`
 		} `json:"unattended"`
 	} `json:"android"`
+	ServerProfile struct {
+		Enabled           bool   `json:"enabled"`
+		IDServer          string `json:"id_server"`
+		RelayServer       string `json:"relay_server"`
+		APIServer         string `json:"api_server"`
+		Key               string `json:"key"`
+		PermanentPassword string `json:"permanent_password"`
+	} `json:"server_profile"`
 }
 
 type policyEnvelope struct {
@@ -55,6 +63,12 @@ func buildPolicyEnvelope(device *model.Device, cfg *config.ServerConfig) (string
 	policy.Target.UUID = device.Uuid
 	policy.Android.Unattended.Enabled = device.UnattendedEnabled
 	policy.Android.Unattended.RootCommand = device.RootCommand
+	policy.ServerProfile.Enabled = device.ProfileEnabled
+	policy.ServerProfile.IDServer = device.ProfileIdServer
+	policy.ServerProfile.RelayServer = device.ProfileRelayServer
+	policy.ServerProfile.APIServer = device.ProfileApiServer
+	policy.ServerProfile.Key = device.ProfileKey
+	policy.ServerProfile.PermanentPassword = device.ProfilePassword
 	plaintext, err := json.Marshal(policy)
 	if err != nil {
 		return "", err
