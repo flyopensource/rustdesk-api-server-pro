@@ -11,6 +11,7 @@ import (
 	"math"
 	"rustdesk-api-server-pro/app/form/api"
 	"rustdesk-api-server-pro/app/model"
+	devicepolicy "rustdesk-api-server-pro/app/policy"
 	"rustdesk-api-server-pro/config"
 	versionhelper "rustdesk-api-server-pro/helper/version"
 	"strconv"
@@ -245,7 +246,11 @@ func (c *DeviceController) PostHeartbeat() mvc.Result {
 	strategy := iris.Map{"translate_mode": capability.TranslateMode}
 	response := iris.Map{"modified_at": device.PolicyRevision, "strategy": strategy}
 	if device.PolicyRevision > form.ModifiedAt {
-		envelope, err := buildPolicyEnvelope(device, c.ServerConfig)
+		resolution, err := devicepolicy.ResolveForDevice(c.Db, device)
+		if err != nil {
+			return responseError(iris.StatusInternalServerError, "failed to resolve device policy")
+		}
+		envelope, err := buildPolicyEnvelope(device, c.ServerConfig, resolution.Effective)
 		if err != nil {
 			return responseError(iris.StatusServiceUnavailable, err.Error())
 		}

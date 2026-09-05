@@ -1,7 +1,20 @@
 <script setup lang="tsx">
-import { reactive, ref } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 import { NButton, NFlex, NSelect, NSwitch, NTag } from 'naive-ui';
-import { fetchDevicesList, updateDeviceProfile, updateDeviceUnattended } from '@/service/api/devices';
+import {
+  createDeviceGroup,
+  deleteDeviceGroup,
+  deleteManagedDevicePolicy,
+  fetchDeviceGroups,
+  fetchDevicesList,
+  fetchEffectiveDevicePolicy,
+  fetchManagedDevicePolicy,
+  updateDeviceGroup,
+  updateDeviceGroupMembers,
+  updateDeviceProfile,
+  updateDeviceUnattended,
+  updateManagedDevicePolicy
+} from '@/service/api/devices';
 import { $t } from '@/locales';
 import { useAppStore } from '@/store/modules/app';
 import { useTable } from '@/hooks/common/table';
@@ -9,6 +22,27 @@ import TableHeader from './components/table-header.vue';
 import AuditBaseLogsSearch from './components/search.vue';
 
 const appStore = useAppStore();
+const groupsVisible = ref(false);
+const groups = ref<Api.Devices.DeviceGroup[]>([]);
+const groupForm = reactive({ id: 0, name: '', priority: 0, enabled: true, member_ids: '' });
+const policyVisible = ref(false);
+const policy = reactive({
+  scope_type: 'global' as Api.Devices.PolicyScope,
+  scope_id: 0,
+  enabled: true,
+  unattended_enabled: 'inherit' as 'inherit' | 'true' | 'false',
+  root_command: '' as Api.Devices.PolicyDocument['unattended']['root_command'] | '',
+  profile_enabled: 'inherit' as 'inherit' | 'true' | 'false',
+  id_server: null as string | null,
+  relay_server: null as string | null,
+  api_server: null as string | null,
+  key: '',
+  permanent_password: '',
+  key_set: false,
+  password_set: false
+});
+const previewVisible = ref(false);
+const preview = ref<Api.Devices.PolicyPreview | null>(null);
 const profileVisible = ref(false);
 const profile = reactive({
   id: 0,
@@ -35,6 +69,93 @@ function editProfile(row: Api.Devices.Device) {
     password_set: row.profile_password_set
   });
   profileVisible.value = true;
+}
+
+async function loadGroups() {
+  const { data: result } = await fetchDeviceGroups();
+  groups.value = result || [];
+}
+
+function newGroup() {
+  Object.assign(groupForm, { id: 0, name: '', priority: 0, enabled: true, member_ids: '' });
+}
+
+function editGroup(group: Api.Devices.DeviceGroup) {
+  Object.assign(groupForm, { id: group.id, name: group.name, priority: group.priority, enabled: group.enabled, member_ids: group.device_ids.join(',') });
+}
+
+async function saveGroup() {
+  const base = { name: groupForm.name.trim(), priority: groupForm.priority, enabled: groupForm.enabled };
+  const response = groupForm.id ? await updateDeviceGroup({ id: groupForm.id, ...base }) : await createDeviceGroup(base);
+  if (response.error) return;
+  const groupId = groupForm.id || response.data?.id || 0;
+  const deviceIds = groupForm.member_ids.split(',').map(value => Number(value.trim())).filter(value => Number.isInteger(value) && value > 0);
+  if (groupId && (await updateDeviceGroupMembers(groupId, [...new Set(deviceIds)])).error) return;
+  window.$message?.success('设备组已保存');
+  newGroup();
+  await loadGroups();
+}
+
+async function removeGroup(id: number) {
+  if (!(await deleteDeviceGroup(id)).error) {
+    window.$message?.success('设备组已删除');
+    await loadGroups();
+  }
+}
+
+async function editManagedPolicy(scopeType: Api.Devices.PolicyScope, scopeId: number) {
+  Object.assign(policy, {
+    scope_type: scopeType, scope_id: scopeId, enabled: true, unattended_enabled: 'inherit', root_command: '',
+    profile_enabled: 'inherit', id_server: null, relay_server: null, api_server: null, key: '', permanent_password: '', key_set: false, password_set: false
+  });
+  const { data: existing } = await fetchManagedDevicePolicy(scopeType, scopeId);
+  if (existing) {
+    const document = existing.document;
+    Object.assign(policy, {
+      enabled: existing.enabled,
+      unattended_enabled: document.unattended.enabled === undefined ? 'inherit' : String(document.unattended.enabled),
+      root_command: document.unattended.root_command ?? '',
+      profile_enabled: document.server_profile.enabled === undefined ? 'inherit' : String(document.server_profile.enabled),
+      id_server: document.server_profile.id_server ?? null,
+      relay_server: document.server_profile.relay_server ?? null,
+      api_server: document.server_profile.api_server ?? null,
+      key_set: Boolean(document.server_profile.key_set),
+      password_set: Boolean(document.server_profile.permanent_password_set)
+    });
+  }
+  policyVisible.value = true;
+}
+
+async function saveManagedPolicy() {
+  const serverProfile: Api.Devices.PolicyDocument['server_profile'] = {};
+  if (policy.profile_enabled !== 'inherit') serverProfile.enabled = policy.profile_enabled === 'true';
+  if (policy.id_server !== null) serverProfile.id_server = policy.id_server.trim();
+  if (policy.relay_server !== null) serverProfile.relay_server = policy.relay_server.trim();
+  if (policy.api_server !== null) serverProfile.api_server = policy.api_server.trim();
+  if (policy.key) serverProfile.key = policy.key;
+  if (policy.permanent_password) serverProfile.permanent_password = policy.permanent_password;
+  const unattended: Api.Devices.PolicyDocument['unattended'] = {};
+  if (policy.unattended_enabled !== 'inherit') unattended.enabled = policy.unattended_enabled === 'true';
+  if (policy.root_command) unattended.root_command = policy.root_command;
+  const { error } = await updateManagedDevicePolicy({
+    scope_type: policy.scope_type, scope_id: policy.scope_id, enabled: policy.enabled,
+    document: { unattended, server_profile: serverProfile }
+  });
+  if (!error) {
+    policyVisible.value = false;
+    window.$message?.success('分层策略已发布');
+    await getData();
+  }
+}
+
+async function removeManagedPolicy() {
+  const { error } = await deleteManagedDevicePolicy(policy.scope_type, policy.scope_id);
+  if (!error) { policyVisible.value = false; window.$message?.success('覆盖策略已取消'); await getData(); }
+}
+
+async function showPreview(row: Api.Devices.Device) {
+  const { data: result } = await fetchEffectiveDevicePolicy(row.id!);
+  if (result) { preview.value = result; previewVisible.value = true; }
 }
 
 async function saveProfile() {
@@ -183,11 +304,17 @@ const {
             {row.profile_active_source || '未回报'} / {row.profile_connected ? '已连接' : '未连接'}
           </NTag>
           <span class="text-12px">{row.profile_applied_revision || 0}/{row.policy_revision}</span>
+          <NFlex size={4}>
+            <NButton size="tiny" onClick={() => editManagedPolicy('device', row.id!)}>覆盖</NButton>
+            <NButton size="tiny" onClick={() => showPreview(row)}>预览</NButton>
+          </NFlex>
         </NFlex>
       )
     }
   ]
 });
+
+onMounted(loadGroups);
 </script>
 
 <template>
@@ -196,7 +323,11 @@ const {
 
     <NCard :title="$t('route.devices')" :bordered="false" size="small" class="sm:flex-1-hidden card-wrapper">
       <template #header-extra>
-        <TableHeader v-model:columns="columnChecks" :loading="loading" @refresh="getData" />
+        <NFlex>
+          <NButton size="small" @click="editManagedPolicy('global', 0)">全局策略</NButton>
+          <NButton size="small" @click="groupsVisible = true">设备组</NButton>
+          <TableHeader v-model:columns="columnChecks" :loading="loading" @refresh="getData" />
+        </NFlex>
       </template>
       <NDataTable
         :columns="columns"
@@ -226,6 +357,56 @@ const {
         </NFormItem>
       </NForm>
       <template #footer><div class="flex justify-end gap-12px"><NButton @click="profileVisible = false">取消</NButton><NButton type="primary" @click="saveProfile">保存并发布</NButton></div></template>
+    </NModal>
+
+    <NModal v-model:show="groupsVisible" preset="card" title="设备组管理" class="w-760px max-w-95vw">
+      <NForm label-placement="left" label-width="90">
+        <NFormItem label="组名"><NInput v-model:value="groupForm.name" /></NFormItem>
+        <NFormItem label="优先级"><NInputNumber v-model:value="groupForm.priority" /></NFormItem>
+        <NFormItem label="启用"><NSwitch v-model:value="groupForm.enabled" /></NFormItem>
+        <NFormItem label="设备 ID"><NInput v-model:value="groupForm.member_ids" placeholder="后台设备数字 ID，逗号分隔" /></NFormItem>
+        <NFlex justify="end"><NButton @click="newGroup">清空</NButton><NButton type="primary" @click="saveGroup">保存</NButton></NFlex>
+      </NForm>
+      <NDivider />
+      <NList bordered>
+        <NListItem v-for="group in groups" :key="group.id">
+          {{ group.name }} · 优先级 {{ group.priority }} · {{ group.enabled ? '启用' : '停用' }} · {{ group.member_count }} 台
+          <template #suffix><NFlex><NButton size="small" @click="editManagedPolicy('group', group.id)">策略</NButton><NButton size="small" @click="editGroup(group)">编辑</NButton><NButton size="small" type="error" @click="removeGroup(group.id)">删除</NButton></NFlex></template>
+        </NListItem>
+      </NList>
+    </NModal>
+
+    <NModal v-model:show="policyVisible" preset="card" :title="`分层策略：${policy.scope_type}:${policy.scope_id}`" class="w-650px max-w-95vw">
+      <NForm label-placement="left" label-width="130">
+        <NFormItem label="策略启用"><NSwitch v-model:value="policy.enabled" /></NFormItem>
+        <NFormItem label="无人值守">
+          <NSelect v-model:value="policy.unattended_enabled" :options="[{label:'继承',value:'inherit'},{label:'开启',value:'true'},{label:'关闭',value:'false'}]" />
+        </NFormItem>
+        <NFormItem label="Root 方式">
+          <NSelect v-model:value="policy.root_command" :options="[{label:'继承',value:''},{label:'自动',value:'auto'},{label:'su',value:'su'},{label:'testsu',value:'testsu'},{label:'禁用',value:'disabled'}]" />
+        </NFormItem>
+        <NFormItem label="隐藏服务器">
+          <NSelect v-model:value="policy.profile_enabled" :options="[{label:'继承',value:'inherit'},{label:'开启',value:'true'},{label:'关闭',value:'false'}]" />
+        </NFormItem>
+        <NFormItem label="ID Server"><NInput v-model:value="policy.id_server" clearable placeholder="留空值表示显式清空，清除控件表示继承" /></NFormItem>
+        <NFormItem label="Relay Server"><NInput v-model:value="policy.relay_server" clearable /></NFormItem>
+        <NFormItem label="API Server"><NInput v-model:value="policy.api_server" clearable /></NFormItem>
+        <NFormItem label="Server Key"><NInput v-model:value="policy.key" type="password" :placeholder="policy.key_set ? '已设置，留空保持' : '留空继承'" /></NFormItem>
+        <NFormItem label="永久密码"><NInput v-model:value="policy.permanent_password" type="password" :placeholder="policy.password_set ? '已设置，留空保持' : '留空继承'" /></NFormItem>
+      </NForm>
+      <template #footer><NFlex justify="space-between"><NButton type="error" @click="removeManagedPolicy">取消此层覆盖</NButton><NFlex><NButton @click="policyVisible = false">关闭</NButton><NButton type="primary" @click="saveManagedPolicy">保存并发布</NButton></NFlex></NFlex></template>
+    </NModal>
+
+    <NModal v-model:show="previewVisible" preset="card" title="有效策略预览" class="w-600px max-w-95vw">
+      <NDescriptions v-if="preview" label-placement="left" bordered :column="1">
+        <NDescriptionsItem label="合并层级">{{ preview.layers.join(' → ') }}</NDescriptionsItem>
+        <NDescriptionsItem label="无人值守">{{ preview.effective.unattended_enabled ? '开启' : '关闭' }} / {{ preview.effective.root_command }}</NDescriptionsItem>
+        <NDescriptionsItem label="隐藏服务器">{{ preview.effective.profile_enabled ? '开启' : '关闭' }}</NDescriptionsItem>
+        <NDescriptionsItem label="ID Server">{{ preview.effective.id_server }}</NDescriptionsItem>
+        <NDescriptionsItem label="Relay Server">{{ preview.effective.relay_server }}</NDescriptionsItem>
+        <NDescriptionsItem label="API Server">{{ preview.effective.api_server }}</NDescriptionsItem>
+        <NDescriptionsItem label="敏感字段">Key: {{ preview.effective.key_set ? '已设置' : '未设置' }} / 密码: {{ preview.effective.permanent_password_set ? '已设置' : '未设置' }}</NDescriptionsItem>
+      </NDescriptions>
     </NModal>
   </div>
 </template>

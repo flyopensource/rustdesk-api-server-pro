@@ -20,6 +20,7 @@ func (c *DevicesController) BeforeActivation(b mvc.BeforeActivation) {
 	b.Handle("GET", "/devices/list", "HandleList")
 	b.Handle("PUT", "/devices/unattended", "HandleUnattended")
 	b.Handle("PUT", "/devices/profile", "HandleProfile")
+	registerPolicyRoutes(b)
 }
 
 func (c *DevicesController) HandleProfile() mvc.Result {
@@ -75,6 +76,19 @@ func (c *DevicesController) HandleProfile() mvc.Result {
 	if err != nil {
 		return c.Error(nil, err.Error())
 	}
+	device.ProfileEnabled = form.Enabled
+	device.ProfileIdServer = form.IDServer
+	device.ProfileRelayServer = form.RelayServer
+	device.ProfileApiServer = form.APIServer
+	if form.Key != nil {
+		device.ProfileKey = *form.Key
+	}
+	if form.PermanentPassword != nil {
+		device.ProfilePassword = *form.PermanentPassword
+	}
+	if err = upsertDeviceSnapshot(c.Db, &device, true); err != nil {
+		return c.Error(nil, err.Error())
+	}
 	return c.Success(iris.Map{"policy_revision": device.PolicyRevision}, "ok")
 }
 
@@ -107,6 +121,9 @@ func (c *DevicesController) HandleUnattended() mvc.Result {
 		"policy_revision":    device.PolicyRevision,
 	})
 	if err != nil {
+		return c.Error(nil, err.Error())
+	}
+	if err = upsertDeviceSnapshot(c.Db, &device, true); err != nil {
 		return c.Error(nil, err.Error())
 	}
 	return c.Success(iris.Map{"policy_revision": device.PolicyRevision}, "ok")

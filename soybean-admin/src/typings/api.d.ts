@@ -151,6 +151,51 @@ declare namespace Api {
       profile_reported_at: string;
     }>;
     type DevicesList = Common.PaginatingQueryRecord<Device>;
+
+    type DeviceGroup = {
+      id: number;
+      name: string;
+      priority: number;
+      enabled: boolean;
+      member_count: number;
+      device_ids: number[];
+    };
+    type PolicyScope = 'global' | 'group' | 'device';
+    type PolicyDocument = {
+      unattended: { enabled?: boolean; root_command?: 'auto' | 'su' | 'testsu' | 'disabled' };
+      server_profile: {
+        enabled?: boolean;
+        id_server?: string;
+        relay_server?: string;
+        api_server?: string;
+        key?: string;
+        permanent_password?: string;
+        key_set?: boolean;
+        permanent_password_set?: boolean;
+      };
+    };
+    type ManagedPolicy = {
+      scope_type: PolicyScope;
+      scope_id: number;
+      revision: number;
+      enabled: boolean;
+      document: PolicyDocument;
+    };
+    type ManagedPolicyInput = Omit<ManagedPolicy, 'revision'>;
+    type PolicyPreview = {
+      device_id: number;
+      layers: string[];
+      effective: {
+        unattended_enabled: boolean;
+        root_command: string;
+        profile_enabled: boolean;
+        id_server: string;
+        relay_server: string;
+        api_server: string;
+        key_set: boolean;
+        permanent_password_set: boolean;
+      };
+    };
     type DeviceSearchParams = CommonType.RecordNullable<
       Pick<Api.Devices.Device, 'username' | 'hostname' | 'rustdesk_id'> & Api.Common.CommonSearchParams
     >;

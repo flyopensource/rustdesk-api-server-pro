@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"rustdesk-api-server-pro/app/model"
+	devicepolicy "rustdesk-api-server-pro/app/policy"
 	"rustdesk-api-server-pro/config"
 	"time"
 
@@ -48,7 +49,7 @@ type policyEnvelope struct {
 	Signature  string `json:"signature"`
 }
 
-func buildPolicyEnvelope(device *model.Device, cfg *config.ServerConfig) (string, error) {
+func buildPolicyEnvelope(device *model.Device, cfg *config.ServerConfig, effective devicepolicy.Effective) (string, error) {
 	seed, err := base64.StdEncoding.DecodeString(cfg.ProvisioningSignSeed)
 	if err != nil || len(seed) != ed25519.SeedSize {
 		return "", errors.New("provisioning signing key is not configured")
@@ -61,14 +62,14 @@ func buildPolicyEnvelope(device *model.Device, cfg *config.ServerConfig) (string
 	policy := unattendedPolicy{Version: 1, Revision: device.PolicyRevision, IssuedAt: now, ExpiresAt: now + 7*24*60*60}
 	policy.Target.RustdeskID = device.RustdeskId
 	policy.Target.UUID = device.Uuid
-	policy.Android.Unattended.Enabled = device.UnattendedEnabled
-	policy.Android.Unattended.RootCommand = device.RootCommand
-	policy.ServerProfile.Enabled = device.ProfileEnabled
-	policy.ServerProfile.IDServer = device.ProfileIdServer
-	policy.ServerProfile.RelayServer = device.ProfileRelayServer
-	policy.ServerProfile.APIServer = device.ProfileApiServer
-	policy.ServerProfile.Key = device.ProfileKey
-	policy.ServerProfile.PermanentPassword = device.ProfilePassword
+	policy.Android.Unattended.Enabled = effective.UnattendedEnabled
+	policy.Android.Unattended.RootCommand = effective.RootCommand
+	policy.ServerProfile.Enabled = effective.ProfileEnabled
+	policy.ServerProfile.IDServer = effective.IDServer
+	policy.ServerProfile.RelayServer = effective.RelayServer
+	policy.ServerProfile.APIServer = effective.APIServer
+	policy.ServerProfile.Key = effective.Key
+	policy.ServerProfile.PermanentPassword = effective.PermanentPassword
 	plaintext, err := json.Marshal(policy)
 	if err != nil {
 		return "", err
