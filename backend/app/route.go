@@ -16,6 +16,10 @@ func SetRoute(app *iris.Application) {
 	apiMvc.Handle(new(api.LoginController))
 	apiMvc.Handle(new(api.AuditController))
 
+	deviceParty := app.Party("/api/device")
+	deviceMvc := mvc.New(deviceParty)
+	deviceMvc.Handle(new(api.DeviceController))
+
 	apiWithAuthParty := app.Party("/api")
 	apiWithAuthParty.Use(middleware.ApiAuth(app))
 	{

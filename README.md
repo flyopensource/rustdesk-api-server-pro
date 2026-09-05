@@ -169,6 +169,9 @@ services:
 | ADMIN_USER | -              | Default administrator account                                  |
 | ADMIN_PASS | -              | Default administrator password                                 |
 | TZ         | -              | Container OS timezone; must match the app setting in YAML file |
+| RUD_DEVICE_ENROLLMENT_KEY_B64 | - | Base64-encoded 32-byte key required by unattended device registration |
+
+Run `rustdesk-api-server-pro sync` after upgrading to create the `device_credential` table. Provisioned Android clients register through `POST /api/device/register`, then use device-signed `/api/device/heartbeat` and `/api/device/sysinfo`; no user access token is required. Keep `RUD_DEVICE_ENROLLMENT_KEY_B64` equal to the value injected into the corresponding APK and provide it through the deployment secret store rather than committing it. A disabled device credential cannot reactivate itself with the shared enrollment key.
 
 ## Build from source
 

@@ -9,12 +9,13 @@ import (
 )
 
 type ServerConfig struct {
-	DebugMode  bool        `yaml:"debugMode"`
-	Db         *DbConfig   `yaml:"db"`
-	SignKey    string      `yaml:"signKey"`
-	HttpConfig *HttpConfig `yaml:"httpConfig"`
-	SmtpConfig *SmtpConfig `yaml:"smtpConfig"`
-	JobsConfig *JobsConfig `yaml:"jobsConfig"`
+	DebugMode           bool        `yaml:"debugMode"`
+	Db                  *DbConfig   `yaml:"db"`
+	SignKey             string      `yaml:"signKey"`
+	DeviceEnrollmentKey string      `yaml:"deviceEnrollmentKey"`
+	HttpConfig          *HttpConfig `yaml:"httpConfig"`
+	SmtpConfig          *SmtpConfig `yaml:"smtpConfig"`
+	JobsConfig          *JobsConfig `yaml:"jobsConfig"`
 }
 
 type DbConfig struct {
@@ -79,15 +80,24 @@ func GetServerConfig() *ServerConfig {
 	bytes, err := os.ReadFile(yamlFile)
 	if err != nil {
 		WriteServerConfig(cfg)
+		applyEnvironment(cfg)
 		return cfg
 	}
 
 	err = yaml.Unmarshal(bytes, cfg)
 	if err != nil {
 		WriteServerConfig(cfg)
+		applyEnvironment(cfg)
 		return cfg
 	}
+	applyEnvironment(cfg)
 	return cfg
+}
+
+func applyEnvironment(cfg *ServerConfig) {
+	if enrollmentKey := os.Getenv("RUD_DEVICE_ENROLLMENT_KEY_B64"); enrollmentKey != "" {
+		cfg.DeviceEnrollmentKey = enrollmentKey
+	}
 }
 
 func WriteServerConfig(cfg *ServerConfig) {

@@ -149,6 +149,9 @@ services:
 |ADMIN_USER|-|默认管理员账号|
 |ADMIN_PASS|-|默认管理员密码|
 |TZ|-|容器操作系统时区；必须与 YAML 文件中的应用设置相匹配|
+|RUD_DEVICE_ENROLLMENT_KEY_B64|-|无人值守设备注册使用的 32 字节 Base64 初始密钥|
+
+升级后先运行 `rustdesk-api-server-pro sync` 创建 `device_credential` 表。Provisioning Android 客户端通过 `POST /api/device/register` 自动注册，之后使用设备签名访问 `/api/device/heartbeat` 和 `/api/device/sysinfo`，不需要用户 Access Token。服务端的 `RUD_DEVICE_ENROLLMENT_KEY_B64` 必须与对应 APK 注入值一致，并应由部署环境的 Secret 管理，不得提交真实值。服务端禁用设备凭据后，该设备不能使用共享初始注册密钥自行恢复。
 
 ## 源代码编译
 ### 必要环境

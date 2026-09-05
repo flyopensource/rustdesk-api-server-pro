@@ -1,4 +1,5 @@
 signKey: "sercrethatmaycontainch@r$32chars" # this is the token signing key. change this before start server
+deviceEnrollmentKey: "" # prefer RUD_DEVICE_ENROLLMENT_KEY_B64 in production
 debugMode: true # debug mode
 db:
   driver: "sqlite"
