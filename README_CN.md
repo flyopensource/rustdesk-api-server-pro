@@ -93,6 +93,8 @@ E2E_ADMIN_USER=admin E2E_ADMIN_PASS=admin123456 pnpm test:e2e
 ### CI
 
 - `build-release.yml` 已支持可选 Playwright 全栈 E2E 任务。
+- 当前发布任务只构建 `linux-amd64.zip`，其中包含前端 `dist`、Go API Server 和 `server.yaml`；手动运行上传 Artifact，推送版本 Tag 时同时创建 Release。
+- Windows、macOS 和 ARM64 发布包暂不构建，待有对应部署和验证需求后再启用。
 - 通过 `workflow_dispatch` 触发时设置 `run_playwright_e2e=true`。
 
 ## 使用Docker部署（推荐）
@@ -207,6 +209,33 @@ cd backend && go build
 3. 编译前端
 ```shell
 cd soybean-admin && pnpm i && pnpm build
+```
+
+### 本地打包部署
+
+安装 Go、Node.js、pnpm 及前端依赖后，在仓库根目录执行：
+
+```shell
+make build
+```
+
+输出目录为：
+
+```text
+build/
+├── rustdesk-api-server-pro
+├── server.yaml
+└── dist/
+```
+
+`server.yaml` 默认使用相对静态目录 `./dist`。从 `build` 目录运行时，API Server 可以直接提供前端页面；正式日常部署仍建议让 Caddy/Nginx 直接提供 `dist`，并把 `/api` 和 `/admin` 反向代理到仅监听本机的 API Server。
+
+```shell
+cd build
+export RUD_API_SIGN_KEY='<稳定保存的至少32位随机字符串>'
+./rustdesk-api-server-pro sync
+./rustdesk-api-server-pro user add admin '管理员密码' --admin
+./rustdesk-api-server-pro start
 ```
 
 ### 运行

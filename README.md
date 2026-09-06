@@ -105,6 +105,8 @@ E2E_ADMIN_USER=admin E2E_ADMIN_PASS=admin123456 pnpm test:e2e
 ### CI
 
 - `build-release.yml` supports optional full-stack Playwright E2E.
+- The release job currently builds only `linux-amd64.zip`, containing the frontend `dist`, Go API Server, and `server.yaml`. Manual runs upload an artifact, while version tags also create a Release.
+- Windows, macOS, and ARM64 packages remain disabled until they have a deployment and validation requirement.
 - Trigger `workflow_dispatch` with `run_playwright_e2e=true`.
 
 ## Deploying with Docker(recommend)
@@ -128,7 +130,7 @@ db:
   # dsn: "root:123@tcp(localhost:3306)/test?charset=utf8mb4"
 httpConfig:
   printRequestLog: true
-  staticdir: "/app/dist"
+  staticdir: "./dist"
   port: ":12345" # api server port
 
 smtpConfig:
@@ -231,6 +233,33 @@ cd backend && go build
    
 ```shell
 cd soybean-admin && pnpm i && pnpm build
+```
+
+### Local package and deployment
+
+After installing Go, Node.js, pnpm, and the frontend dependencies, run this from the repository root:
+
+```shell
+make build
+```
+
+The output layout is:
+
+```text
+build/
+├── rustdesk-api-server-pro
+├── server.yaml
+└── dist/
+```
+
+`server.yaml` uses the relative static directory `./dist`. When launched from `build`, the API Server can serve the frontend directly. For routine production deployment, Caddy or Nginx should serve `dist` and reverse proxy `/api` and `/admin` to the API Server listening only on localhost.
+
+```shell
+cd build
+export RUD_API_SIGN_KEY='<stable-random-string-with-at-least-32-characters>'
+./rustdesk-api-server-pro sync
+./rustdesk-api-server-pro user add admin 'administrator-password' --admin
+./rustdesk-api-server-pro start
 ```
 
 ### Run
