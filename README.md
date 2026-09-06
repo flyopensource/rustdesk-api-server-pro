@@ -28,12 +28,36 @@ CDN acceleration and security protection for his project are sponsored by Tencen
   - Internationalization support
   - Statistics panel
   - User Management
+  - Device group and membership management
+  - Global, group, and per-device policy editing
+  - Effective policy preview
   - 2FA & Email Verify Code
   - Session Management
   - Log Audit
+- Automatic Android unattended-device enrollment without a prior user login
+- Device-signed heartbeat/sysinfo requests and encrypted policy delivery
+- Remote policy control for unattended mode, recording prompts, accessibility prompts, and server profiles
+- Deterministic policy layering in global, group, then per-device order
 - Lightweight & Cross Platform
   - Minimal sqlite
   - Support for major operating systems and architectures
+
+## Android unattended enrollment and layered policy
+
+On first launch, a provisioned Android client downloads an encrypted `rud.cfg` from the fixed URL injected at build time. It obtains the initial API Server address and enrolls automatically. After enrollment, the device uses its own signing credential for heartbeat, sysinfo, and policy requests, without a user access token. This supports unattended Android boards.
+
+The Web management device page supports:
+
+- creating device groups, editing priority and enabled state, and maintaining group membership;
+- editing global, device-group, and per-device policies;
+- controlling unattended mode, Root command discovery (`su`/`testsu`), recording prompts, accessibility prompts, and the RustDesk Server Profile;
+- previewing the final effective policy and its contributing layers for a device;
+- increasing affected device revisions and delivering the complete merged policy through heartbeat;
+- reporting only whether Server Key and permanent password are configured, without returning their plaintext through management or preview APIs.
+
+Policies are merged deterministically in global, group, then per-device order; later non-null fields override earlier layers. When a device belongs to multiple groups, group priority and group ID determine their order. Existing per-device settings are materialized as the highest-priority device override so enabling layered policy does not unexpectedly change deployed devices.
+
+> **Public repository security:** Never commit the real `rud.cfg` URL, SecretBox key, initial device-enrollment key, signing private key, Server Key, or permanent password to source code, README files, build logs, or Git history. Inject client build values with GitHub Actions Secrets/Variables and server keys with deployment secrets. The built APK necessarily contains the fixed bootstrap URL and initial client credential, so treat the APK itself as a deployment credential.
 
 ## Compatibility Statement (RustDesk 1.4.6)
 
@@ -93,7 +117,7 @@ E2E_ADMIN_USER=admin E2E_ADMIN_PASS=admin123456 pnpm test:e2e
 2. create config
 ```shell
 cat > /your/path/server.yaml <<EOF
-signKey: "sercrethatmaycontainch@r$32chars" # this is the token signing key. change this before start server
+signKey: "" # prefer injecting RUD_API_SIGN_KEY
 debugMode: true # debug mode
 db:
   driver: "sqlite"
@@ -130,6 +154,7 @@ docker run \
   -e ADMIN_USER=admin \ #Administrator account (optional)
   -e ADMIN_PASS=yourpassword \ #Administrator password (optional)
   -e TZ=Asia/Shanghai \ #must match the 'timeZone' setting in server.yaml
+  -e RUD_API_SIGN_KEY='<random-string-with-at-least-32-characters>' \
   -p 8080:8080 \
   -v /your/path:/app/data \
   ghcr.io/lantongxue/rustdesk-api-server-pro:latest
@@ -156,6 +181,7 @@ services:
       - "ADMIN_USER=youruser"
       - "ADMIN_PASS=yourpassword"
       - "TZ=Asia/Shanghai"
+      - "RUD_API_SIGN_KEY=${RUD_API_SIGN_KEY:?set a random signing key with at least 32 characters}"
     volumes:
       - ./server.yaml:/app/data/server.yaml
     network_mode: host
@@ -169,9 +195,15 @@ services:
 | ADMIN_USER | -              | Default administrator account                                  |
 | ADMIN_PASS | -              | Default administrator password                                 |
 | TZ         | -              | Container OS timezone; must match the app setting in YAML file |
+| RUD_API_SIGN_KEY | - | Admin token signing key, at least 32 characters; required to start the API Server |
 | RUD_DEVICE_ENROLLMENT_KEY_B64 | - | Base64-encoded 32-byte key required by unattended device registration |
+| RUD_CFG_SIGN_SEED_B64 | - | Private Ed25519 seed used to sign policies; store it as a secret |
+| RUD_CFG_SECRETBOX_KEY_B64 | - | Base64-encoded 32-byte SecretBox key used to encrypt policies |
+| RUD_CFG_KEY_ID | android-v1 | Policy key-version identifier; this is not a secret key |
 
 Run `rustdesk-api-server-pro sync` after upgrading to create the `device_credential` table. Provisioned Android clients register through `POST /api/device/register`, then use device-signed `/api/device/heartbeat` and `/api/device/sysinfo`; no user access token is required. Keep `RUD_DEVICE_ENROLLMENT_KEY_B64` equal to the value injected into the corresponding APK and provide it through the deployment secret store rather than committing it. A disabled device credential cannot reactivate itself with the shared enrollment key.
+
+The API Server validates its token signing key during startup. Prefer setting `RUD_API_SIGN_KEY` only through the deployment secret store; the server refuses to start when the key is missing or shorter than 32 characters. Existing private deployments may continue using `signKey` in `server.yaml`, while the environment variable takes precedence.
 
 ## Build from source
 

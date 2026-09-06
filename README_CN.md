@@ -15,12 +15,36 @@ Rustdesk Api Server Pro
     - 国际化支持
     - 统计面板
     - 用户管理
+    - 设备组与成员管理
+    - 全局、设备组、单设备三级策略编辑
+    - 设备有效策略预览
     - 两步验证 & 邮件验证码
     - 会话管理
     - 日志审计
+- Android 无人值守设备自动注册，无需用户预先登录
+- 设备签名鉴权的 heartbeat/sysinfo 上报和加密策略下发
+- 无人值守、录屏提示、无障碍提示和服务器配置的远程策略控制
+- 分层策略按“全局 → 设备组 → 单设备”确定性合并，单设备配置优先级最高
 - 轻量化&跨平台
     - 最小sqlite即可
     - 支持主流操作系统和架构
+
+## Android 无人值守和分层策略
+
+Provisioning Android 客户端首次启动后，从构建时注入的固定地址下载加密 `rud.cfg`，取得初始 API Server 地址并自动注册设备。注册成功后，设备使用自己的签名凭据访问 heartbeat、sysinfo 和策略接口，不依赖用户 Access Token，适用于无人值守主板。
+
+后台设备页面支持：
+
+- 创建设备组、编辑优先级和启用状态、维护设备组成员；
+- 编辑全局、设备组、单设备三级策略；
+- 控制无人值守模式、Root 命令自动探测（`su`/`testsu`）、录屏提示、无障碍提示及 RustDesk Server Profile；
+- 预览指定设备最终生效的策略和每一层来源；
+- 策略变更后提升受影响设备的 revision，由 heartbeat 下发完整的合并策略；
+- Server Key 和永久密码只显示“是否已配置”，不会通过管理查询或预览接口返回明文。
+
+策略合并顺序固定为全局策略、设备组策略、单设备策略；后面的非空字段覆盖前一层。设备属于多个组时，按组优先级和组 ID 确定顺序。为避免升级后改变现有设备行为，已有的单设备配置会固化为最高优先级的设备覆盖。
+
+> **公共仓库安全要求：** 不要把真实 `rud.cfg` 下载地址、SecretBox 密钥、设备初始注册密钥、签名私钥、Server Key 或永久密码写入源码、README、构建日志或 Git 历史。客户端构建值必须使用 GitHub Actions Secrets/Variables 注入；服务端密钥必须使用部署环境的 Secret 注入。构建后的 APK 必然包含客户端启动所需的固定地址和初始密钥，因此 APK 本身也应按部署凭据管理。
 
 
 
@@ -79,7 +103,7 @@ docker pull ghcr.io/lantongxue/rustdesk-api-server-pro:latest
 2. 创建配置
 ```shell
 cat > /your/path/server.yaml <<EOF
-signKey: "sercrethatmaycontainch@r$32chars" # this is the token signing key. change this before start server
+signKey: "" # 推荐通过 RUD_API_SIGN_KEY 注入
 debugMode: true # debug mode
 db:
   driver: "sqlite"
@@ -114,6 +138,7 @@ docker run \
 -e ADMIN_USER=admin \ #管理员账号（可选）
 -e ADMIN_PASS=yourpassword \ #管理员密码（可选）
 -e TZ=Asia/Shanghai \ #必须与 server.yaml 中的"timeZone"设置匹配
+-e RUD_API_SIGN_KEY='<至少32位随机字符串>' \
 -p 8080:8080 \
 -v /your/path/server.yaml:/app/server.yaml \
 ghcr.io/lantongxue/rustdesk-api-server-pro:latest
@@ -136,6 +161,7 @@ services:
       - "ADMIN_USER=youruser"
       - "ADMIN_PASS=yourpassword"
       - "TZ=Asia/Shanghai"
+      - "RUD_API_SIGN_KEY=${RUD_API_SIGN_KEY:?请配置至少32位随机签名密钥}"
     volumes:
       - ./server.yaml:/app/server.yaml
     network_mode: host
@@ -149,9 +175,15 @@ services:
 |ADMIN_USER|-|默认管理员账号|
 |ADMIN_PASS|-|默认管理员密码|
 |TZ|-|容器操作系统时区；必须与 YAML 文件中的应用设置相匹配|
+|RUD_API_SIGN_KEY|-|管理员 Token 签名密钥，至少 32 位；API Server 启动必需|
 |RUD_DEVICE_ENROLLMENT_KEY_B64|-|无人值守设备注册使用的 32 字节 Base64 初始密钥|
+|RUD_CFG_SIGN_SEED_B64|-|策略签名使用的 Ed25519 私有 seed；必须作为 Secret 保存|
+|RUD_CFG_SECRETBOX_KEY_B64|-|策略加密使用的 32 字节 Base64 SecretBox 密钥|
+|RUD_CFG_KEY_ID|android-v1|策略密钥版本标识，不是密钥本身|
 
 升级后先运行 `rustdesk-api-server-pro sync` 创建 `device_credential` 表。Provisioning Android 客户端通过 `POST /api/device/register` 自动注册，之后使用设备签名访问 `/api/device/heartbeat` 和 `/api/device/sysinfo`，不需要用户 Access Token。服务端的 `RUD_DEVICE_ENROLLMENT_KEY_B64` 必须与对应 APK 注入值一致，并应由部署环境的 Secret 管理，不得提交真实值。服务端禁用设备凭据后，该设备不能使用共享初始注册密钥自行恢复。
+
+API Server 启动时会校验 Token 签名密钥。推荐只通过部署 Secret 设置 `RUD_API_SIGN_KEY`；未配置或长度不足 32 位时服务拒绝启动。已有私有部署仍可使用 `server.yaml` 的 `signKey`，环境变量优先级更高。
 
 ## 源代码编译
 ### 必要环境

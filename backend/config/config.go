@@ -1,9 +1,9 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path"
-	"rustdesk-api-server-pro/util"
 
 	"gopkg.in/yaml.v3"
 )
@@ -69,7 +69,6 @@ func GetDefaultServerConfig() *ServerConfig {
 			Port:      ":8080",
 			StaticDir: "dist",
 		},
-		SignKey: util.RandomString(32),
 		JobsConfig: &JobsConfig{
 			DeviceCheckJob: &DeviceCheckJob{
 				Duration: 30,
@@ -98,6 +97,9 @@ func GetServerConfig() *ServerConfig {
 }
 
 func applyEnvironment(cfg *ServerConfig) {
+	if value := os.Getenv("RUD_API_SIGN_KEY"); value != "" {
+		cfg.SignKey = value
+	}
 	if enrollmentKey := os.Getenv("RUD_DEVICE_ENROLLMENT_KEY_B64"); enrollmentKey != "" {
 		cfg.DeviceEnrollmentKey = enrollmentKey
 	}
@@ -113,6 +115,13 @@ func applyEnvironment(cfg *ServerConfig) {
 	if cfg.ProvisioningKeyId == "" {
 		cfg.ProvisioningKeyId = "android-v1"
 	}
+}
+
+func (cfg *ServerConfig) ValidateForServer() error {
+	if len(cfg.SignKey) < 32 {
+		return fmt.Errorf("RUD_API_SIGN_KEY or signKey must contain at least 32 characters")
+	}
+	return nil
 }
 
 func WriteServerConfig(cfg *ServerConfig) {

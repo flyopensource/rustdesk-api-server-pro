@@ -1,4 +1,4 @@
-signKey: "sercrethatmaycontainch@r$32chars" # this is the token signing key. change this before start server
+signKey: "" # prefer RUD_API_SIGN_KEY; the server refuses keys shorter than 32 characters
 deviceEnrollmentKey: "" # prefer RUD_DEVICE_ENROLLMENT_KEY_B64 in production
 debugMode: true # debug mode
 db:

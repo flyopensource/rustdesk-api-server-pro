@@ -43,6 +43,9 @@ func newApp(cfg *config.ServerConfig) (*iris.Application, error) {
 
 func StartServer() (bool, error) {
 	cfg := config.GetServerConfig()
+	if err := cfg.ValidateForServer(); err != nil {
+		return false, err
+	}
 
 	StartJobs(cfg)
 
