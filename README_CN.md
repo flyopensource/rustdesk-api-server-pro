@@ -200,11 +200,14 @@ API Server 启动时会校验 Token 签名密钥。推荐只通过部署 Secret 
 git clone https://github.com/lantongxue/rustdesk-api-server-pro.git
 ```
 
-2. 编译api-server
+2. 将 API Server 编译为 Linux amd64 静态可执行文件
 
 ```shell
-cd backend && go build
+cd backend
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w"
 ```
+
+关闭 CGO 可避免 Linux 可执行文件依赖编译机的 glibc 版本。
 
 3. 编译前端
 ```shell
@@ -219,6 +222,8 @@ cd soybean-admin && pnpm i && pnpm build
 make build
 ```
 
+`make build` 会在关闭 CGO 的情况下编译后端。生成的 Linux 可执行文件为静态链接，可在较旧发行版上运行，不会出现 `GLIBC_2.32 not found` 之类的错误。
+
 输出目录为：
 
 ```text
@@ -227,6 +232,15 @@ build/
 ├── server.yaml
 └── dist/
 ```
+
+部署前可在 Linux 上验证可执行文件：
+
+```shell
+file build/rustdesk-api-server-pro
+ldd build/rustdesk-api-server-pro
+```
+
+`file` 应显示 `statically linked`，`ldd` 应显示 `not a dynamic executable`。
 
 `server.yaml` 默认使用相对静态目录 `./dist`。从 `build` 目录运行时，API Server 可以直接提供前端页面；正式日常部署仍建议让 Caddy/Nginx 直接提供 `dist`，并把 `/api` 和 `/admin` 反向代理到仅监听本机的 API Server。
 

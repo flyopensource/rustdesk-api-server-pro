@@ -223,11 +223,14 @@ The API Server validates its token signing key during startup. Prefer setting `R
 git clone https://github.com/lantongxue/rustdesk-api-server-pro.git
 ```
 
-2. Build the api-server
+2. Build the API Server for Linux amd64 as a static executable
 
 ```shell
-cd backend && go build
+cd backend
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w"
 ```
+
+Disabling CGO prevents the Linux executable from depending on the glibc version installed on the build machine.
 
 3. Build the frontend
    
@@ -243,6 +246,8 @@ After installing Go, Node.js, pnpm, and the frontend dependencies, run this from
 make build
 ```
 
+`make build` builds the backend with CGO disabled. The resulting Linux executable is statically linked and can run on older distributions without errors such as `GLIBC_2.32 not found`.
+
 The output layout is:
 
 ```text
@@ -251,6 +256,15 @@ build/
 ├── server.yaml
 └── dist/
 ```
+
+On Linux, verify the executable before deployment:
+
+```shell
+file build/rustdesk-api-server-pro
+ldd build/rustdesk-api-server-pro
+```
+
+`file` should report `statically linked`, and `ldd` should report `not a dynamic executable`.
 
 `server.yaml` uses the relative static directory `./dist`. When launched from `build`, the API Server can serve the frontend directly. For routine production deployment, Caddy or Nginx should serve `dist` and reverse proxy `/api` and `/admin` to the API Server listening only on localhost.
 

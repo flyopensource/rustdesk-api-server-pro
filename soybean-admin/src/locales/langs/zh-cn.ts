@@ -191,9 +191,6 @@ const local: App.I18n.Schema = {
     },
     home: {
       greeting: '你好，{userName}, 今天又是充满活力的一天!',
-      friendlySponsorship: '友情赞助',
-      cupOfCoffee: '可以请我喝杯咖啡吗？',
-      thankYou: '感谢您的赞助',
       userCount: '用户数量',
       deviceCount: '主机数量',
       onlineCount: '在线数量',
