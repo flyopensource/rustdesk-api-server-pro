@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"rustdesk-api-server-pro/app/form/api"
 	"rustdesk-api-server-pro/app/model"
@@ -19,7 +20,10 @@ import (
 
 	"github.com/kataras/iris/v12"
 	"github.com/kataras/iris/v12/mvc"
+	"xorm.io/xorm"
 )
+
+var errInvalidConnectionIDReport = errors.New("invalid connection id report")
 
 const deviceClockSkewSeconds int64 = 300
 
@@ -234,7 +238,18 @@ func (c *DeviceController) PostHeartbeat() mvc.Result {
 	if err := json.Unmarshal(payload, &form); err != nil {
 		return responseError(iris.StatusBadRequest, "invalid heartbeat payload")
 	}
-	if ResolveHeartbeatRustdeskID(form.RustdeskId, form.Uuid) != device.RustdeskId || (device.Uuid != "" && form.Uuid != device.Uuid) {
+	if device.Uuid != "" && form.Uuid != device.Uuid {
+		return responseError(iris.StatusConflict, "heartbeat identity mismatch")
+	}
+	if form.ConnectionIdStatus != nil {
+		if err := reconcileConnectionID(c.Db, device, form.ConnectionIdStatus, form.RustdeskId); err != nil {
+			if errors.Is(err, errInvalidConnectionIDReport) {
+				return responseError(iris.StatusConflict, err.Error())
+			}
+			return responseError(iris.StatusInternalServerError, "failed to reconcile connection id")
+		}
+	}
+	if ResolveHeartbeatRustdeskID(form.RustdeskId, form.Uuid) != device.RustdeskId {
 		return responseError(iris.StatusConflict, "heartbeat identity mismatch")
 	}
 	if _, err := c.Db.ID(device.Id).Cols("is_online", "conns").Update(&model.Device{
@@ -289,6 +304,92 @@ func (c *DeviceController) PostHeartbeat() mvc.Result {
 		response["strategy"] = strategy
 	}
 	return mvc.Response{Object: response}
+}
+
+func reconcileConnectionID(db *xorm.Engine, device *model.Device, report *api.ConnectionIdStatusForm, reportedID string) error {
+	if report.Revision < device.ConnectionIdRevision {
+		return nil
+	}
+	if report.Revision != device.ConnectionIdRevision {
+		return fmt.Errorf("%w: revision mismatch", errInvalidConnectionIDReport)
+	}
+	if device.ConnectionIdStatus == model.ConnectionIdApplied && report.Status == model.ConnectionIdApplied && report.RequestedId == device.RequestedRustdeskId && report.ActiveId == device.RustdeskId && reportedID == device.RustdeskId && report.LastError == "" {
+		return nil
+	}
+	if device.ConnectionIdStatus == model.ConnectionIdFailed && report.Status == model.ConnectionIdFailed && report.RequestedId == device.RequestedRustdeskId && report.ActiveId == device.RustdeskId && reportedID == device.RustdeskId && report.LastError == device.ConnectionIdError {
+		return nil
+	}
+	if device.ConnectionIdStatus != model.ConnectionIdPending || report.RequestedId == "" || report.RequestedId != device.RequestedRustdeskId {
+		return fmt.Errorf("%w: request mismatch", errInvalidConnectionIDReport)
+	}
+	if len(report.LastError) > 255 {
+		report.LastError = report.LastError[:255]
+	}
+	s := db.NewSession()
+	defer s.Close()
+	if err := s.Begin(); err != nil {
+		return err
+	}
+	defer s.Rollback()
+	now := time.Now()
+	switch report.Status {
+	case model.ConnectionIdFailed:
+		if report.ActiveId != device.RustdeskId || reportedID != device.RustdeskId || report.LastError == "" {
+			return fmt.Errorf("%w: invalid failure state", errInvalidConnectionIDReport)
+		}
+		if _, err := s.ID(device.Id).Cols("connection_id_status", "connection_id_error").Update(&model.Device{
+			ConnectionIdStatus: model.ConnectionIdFailed,
+			ConnectionIdError:  report.LastError,
+		}); err != nil {
+			return err
+		}
+		detail, err := json.Marshal(iris.Map{"requested_id": report.RequestedId, "error": report.LastError})
+		if err != nil {
+			return err
+		}
+		if _, err = s.Insert(&model.DeviceOperation{DeviceId: device.Id, RustdeskId: device.RustdeskId, Action: "connection_id_failed", Detail: string(detail)}); err != nil {
+			return err
+		}
+		device.ConnectionIdStatus = model.ConnectionIdFailed
+		device.ConnectionIdError = report.LastError
+	case model.ConnectionIdApplied:
+		if report.ActiveId != device.RequestedRustdeskId || reportedID != device.RequestedRustdeskId || report.LastError != "" {
+			return fmt.Errorf("%w: invalid applied state", errInvalidConnectionIDReport)
+		}
+		conflict, err := s.Where("id <> ? AND rustdesk_id = ?", device.Id, report.ActiveId).Exist(new(model.Device))
+		if err != nil {
+			return err
+		}
+		if conflict {
+			return fmt.Errorf("%w: connection id taken", errInvalidConnectionIDReport)
+		}
+		if _, err = s.Exec("UPDATE peer SET rustdesk_id = ? WHERE managed_device_id = ?", report.ActiveId, device.Id); err != nil {
+			return err
+		}
+		oldID := device.RustdeskId
+		if _, err = s.Table(new(model.Device)).ID(device.Id).Update(map[string]interface{}{
+			"rustdesk_id":              report.ActiveId,
+			"connection_id_status":     model.ConnectionIdApplied,
+			"connection_id_error":      "",
+			"connection_id_applied_at": now,
+		}); err != nil {
+			return err
+		}
+		detail, err := json.Marshal(iris.Map{"old_id": oldID, "connection_id": report.ActiveId})
+		if err != nil {
+			return err
+		}
+		if _, err = s.Insert(&model.DeviceOperation{DeviceId: device.Id, RustdeskId: report.ActiveId, Action: "connection_id_applied", Detail: string(detail)}); err != nil {
+			return err
+		}
+		device.RustdeskId = report.ActiveId
+		device.ConnectionIdStatus = model.ConnectionIdApplied
+		device.ConnectionIdError = ""
+		device.ConnectionIdAppliedAt = now
+	default:
+		return fmt.Errorf("%w: unsupported status", errInvalidConnectionIDReport)
+	}
+	return s.Commit()
 }
 
 func (c *DeviceController) PostSysinfo() mvc.Result {

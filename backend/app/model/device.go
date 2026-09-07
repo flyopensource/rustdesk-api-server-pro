@@ -10,6 +10,7 @@ type Device struct {
 	RustdeskId              string    `xorm:"'rustdesk_id' varchar(255) unique"`
 	RequestedRustdeskId     string    `xorm:"'requested_rustdesk_id' varchar(16) notnull default '' index"`
 	ConnectionIdStatus      string    `xorm:"'connection_id_status' varchar(16) notnull default 'unassigned' index"`
+	ConnectionIdRevision    int64     `xorm:"'connection_id_revision' bigint notnull default 0"`
 	ConnectionIdError       string    `xorm:"'connection_id_error' varchar(255) notnull default ''"`
 	ConnectionIdRequestedAt time.Time `xorm:"'connection_id_requested_at' datetime"`
 	ConnectionIdAppliedAt   time.Time `xorm:"'connection_id_applied_at' datetime"`
