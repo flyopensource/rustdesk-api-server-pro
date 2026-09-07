@@ -16,7 +16,7 @@ func newPolicyTestDB(t *testing.T) *xorm.Engine {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = db.Sync(new(model.Device), new(model.DeviceGroup), new(model.DeviceGroupMember), new(model.ServerProfile), new(model.ServerProfileAssignment), new(model.StrategyState)); err != nil {
+	if err = db.Sync(new(model.Device), new(model.DeviceGroup), new(model.ServerProfile), new(model.StrategyState)); err != nil {
 		db.Close()
 		t.Fatal(err)
 	}
@@ -26,10 +26,6 @@ func newPolicyTestDB(t *testing.T) *xorm.Engine {
 
 func TestResolveForDeviceUsesDeviceGroupGlobalPrecedence(t *testing.T) {
 	db := newPolicyTestDB(t)
-	device := model.Device{RustdeskId: "123", UnattendedEnabled: true, RootCommand: "/system/xbin/su"}
-	if _, err := db.Insert(&device); err != nil {
-		t.Fatal(err)
-	}
 	profiles := []model.ServerProfile{
 		{Name: "global", IdServer: "global.example", Enabled: true},
 		{Name: "group", IdServer: "group.example", Enabled: true},
@@ -40,22 +36,19 @@ func TestResolveForDeviceUsesDeviceGroupGlobalPrecedence(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	group := model.DeviceGroup{Name: "kiosks", Enabled: true}
+	group := model.DeviceGroup{Name: "kiosks", Enabled: true, ProfileId: profiles[1].Id}
 	if _, err := db.Insert(&group); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Insert(&model.DeviceGroupMember{GroupId: group.Id, DeviceId: device.Id}); err != nil {
+	device := model.Device{
+		RustdeskId: "123", UnattendedEnabled: true, RootCommand: "/system/xbin/su",
+		StrategyGroupId: group.Id, StrategyProfileId: profiles[2].Id,
+	}
+	if _, err := db.Insert(&device); err != nil {
 		t.Fatal(err)
 	}
-	assignments := []model.ServerProfileAssignment{
-		{ScopeType: model.StrategyScopeGlobal, ScopeId: 0, ProfileId: profiles[0].Id},
-		{ScopeType: model.StrategyScopeGroup, ScopeId: group.Id, ProfileId: profiles[1].Id},
-		{ScopeType: model.StrategyScopeDevice, ScopeId: device.Id, ProfileId: profiles[2].Id},
-	}
-	for i := range assignments {
-		if _, err := db.Insert(&assignments[i]); err != nil {
-			t.Fatal(err)
-		}
+	if _, err := db.Insert(&model.StrategyState{Id: 1, Revision: 1, GlobalProfileId: profiles[0].Id}); err != nil {
+		t.Fatal(err)
 	}
 	effective, err := ResolveForDevice(db, &device)
 	if err != nil {
@@ -67,14 +60,16 @@ func TestResolveForDeviceUsesDeviceGroupGlobalPrecedence(t *testing.T) {
 	if effective.Profile.ID != profiles[2].Id || effective.ProfileSource != "device" {
 		t.Fatalf("device profile did not win: %+v", effective)
 	}
-	if _, err = db.Where("scope_type = ?", model.StrategyScopeDevice).Delete(new(model.ServerProfileAssignment)); err != nil {
+	device.StrategyProfileId = 0
+	if _, err = db.ID(device.Id).Cols("strategy_profile_id").Update(&device); err != nil {
 		t.Fatal(err)
 	}
 	effective, err = ResolveForDevice(db, &device)
 	if err != nil || effective.Profile.ID != profiles[1].Id || effective.ProfileSource != "group:kiosks" {
 		t.Fatalf("group profile did not win: %+v, %v", effective, err)
 	}
-	if _, err = db.Where("scope_type = ?", model.StrategyScopeGroup).Delete(new(model.ServerProfileAssignment)); err != nil {
+	group.ProfileId = 0
+	if _, err = db.ID(group.Id).Cols("profile_id").Update(&group); err != nil {
 		t.Fatal(err)
 	}
 	effective, err = ResolveForDevice(db, &device)
@@ -103,5 +98,31 @@ func TestStrategyRevisionIsMonotonic(t *testing.T) {
 	}
 	if second <= first {
 		t.Fatalf("revision did not increase: %d -> %d", first, second)
+	}
+}
+
+func TestResolveForDeviceSkipsDisabledReferences(t *testing.T) {
+	db := newPolicyTestDB(t)
+	global := model.ServerProfile{Name: "global", IdServer: "global.example", Enabled: true}
+	disabled := model.ServerProfile{Name: "disabled", IdServer: "disabled.example", Enabled: false}
+	if _, err := db.Insert(&global, &disabled); err != nil {
+		t.Fatal(err)
+	}
+	group := model.DeviceGroup{Name: "disabled-group", Enabled: false, ProfileId: global.Id}
+	if _, err := db.Insert(&group); err != nil {
+		t.Fatal(err)
+	}
+	device := model.Device{
+		RustdeskId: "123", RootCommand: "auto", StrategyGroupId: group.Id, StrategyProfileId: disabled.Id,
+	}
+	if _, err := db.Insert(&device); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Insert(&model.StrategyState{Id: 1, Revision: 1, GlobalProfileId: global.Id}); err != nil {
+		t.Fatal(err)
+	}
+	effective, err := ResolveForDevice(db, &device)
+	if err != nil || effective.Profile.ID != global.Id || effective.ProfileSource != "global" {
+		t.Fatalf("disabled references did not fall back to global: %+v, %v", effective, err)
 	}
 }

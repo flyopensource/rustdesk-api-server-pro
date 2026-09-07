@@ -141,6 +141,7 @@ declare namespace Api {
       unattended_reported_at: string;
       group_id: number;
       group_name: string;
+      group_enabled: boolean;
       profile_assignment_id: number;
       profile_enabled: boolean;
       profile_id: number;
@@ -162,10 +163,8 @@ declare namespace Api {
       name: string;
       enabled: boolean;
       member_count: number;
-      device_ids: number[];
       profile_id: number;
     };
-    type StrategyScope = 'global' | 'group' | 'device';
     type ServerProfile = {
       id: number;
       name: string;
@@ -174,6 +173,9 @@ declare namespace Api {
       server_key: string;
       password_set: boolean;
       enabled: boolean;
+      is_global_default: boolean;
+      group_count: number;
+      device_count: number;
     };
     type ServerProfileInput = {
       name: string;

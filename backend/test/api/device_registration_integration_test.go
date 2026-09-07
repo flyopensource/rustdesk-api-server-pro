@@ -49,8 +49,8 @@ func TestDeviceRegistrationAndSignedHeartbeat(t *testing.T) {
 	}
 	defer engine.Close()
 	if err = engine.Sync(
-		new(model.Device), new(model.DeviceCredential), new(model.DeviceGroup), new(model.DeviceGroupMember),
-		new(model.ServerProfile), new(model.ServerProfileAssignment), new(model.StrategyState),
+		new(model.Device), new(model.DeviceCredential), new(model.DeviceGroup),
+		new(model.ServerProfile), new(model.StrategyState),
 	); err != nil {
 		t.Fatal(err)
 	}

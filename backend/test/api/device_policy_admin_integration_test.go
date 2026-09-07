@@ -57,7 +57,7 @@ func TestAdminServerProfilesAssignmentsAndPreview(t *testing.T) {
 	defer db.Close()
 	if err = db.Sync(
 		new(model.User), new(model.AuthToken), new(model.Device), new(model.DeviceGroup),
-		new(model.DeviceGroupMember), new(model.ServerProfile), new(model.ServerProfileAssignment), new(model.StrategyState),
+		new(model.ServerProfile), new(model.StrategyState),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -91,16 +91,51 @@ func TestAdminServerProfilesAssignmentsAndPreview(t *testing.T) {
 	if strings.Contains(string(createdJSON), "private-password") || createdData["password_set"] != true {
 		t.Fatalf("profile response exposed or lost password state: %s", createdJSON)
 	}
-	groupResult := adminJSON(t, application, http.MethodPost, "/admin/devices/groups", map[string]any{"name": "Kiosks", "enabled": true})
-	groupID := int(groupResult["data"].(map[string]any)["id"].(float64))
-	adminJSON(t, application, http.MethodPut, "/admin/devices/groups/members", map[string]any{"group_id": groupID, "device_ids": []int{device.Id}})
-	adminJSON(t, application, http.MethodPut, "/admin/devices/server-profile-assignment", map[string]any{
-		"scope_type": "group", "scope_id": groupID, "profile_id": profileID,
+	groupResult := adminJSON(t, application, http.MethodPost, "/admin/devices/groups", map[string]any{
+		"name": "Kiosks", "enabled": true, "profile_id": profileID,
 	})
+	groupID := int(groupResult["data"].(map[string]any)["id"].(float64))
+	moved := adminJSON(t, application, http.MethodPut, "/admin/devices/group", map[string]any{
+		"id": device.Id, "group_id": groupID,
+	})
+	unchanged := adminJSON(t, application, http.MethodPut, "/admin/devices/group", map[string]any{
+		"id": device.Id, "group_id": groupID,
+	})
+	if moved["data"].(map[string]any)["revision"] != unchanged["data"].(map[string]any)["revision"] {
+		t.Fatal("unchanged group assignment unexpectedly increased the strategy revision")
+	}
+	deviceList := adminJSON(t, application, http.MethodGet, "/admin/devices/list?current=1&size=10", nil)
+	records := deviceList["data"].(map[string]any)["records"].([]any)
+	listedDevice := records[0].(map[string]any)
+	if listedDevice["group_id"] != float64(groupID) || listedDevice["group_name"] != "Kiosks" {
+		t.Fatalf("device list did not expose the selected group: %v", listedDevice)
+	}
 	preview := adminJSON(t, application, http.MethodGet, fmt.Sprintf("/admin/devices/server-profile-preview?device_id=%d", device.Id), nil)
 	effective := preview["data"].(map[string]any)
 	if effective["profile_name"] != "Primary" || effective["profile_source"] != "group:Kiosks" || effective["root_command"] != "auto" {
 		t.Fatalf("unexpected effective strategy: %v", effective)
+	}
+	adminJSON(t, application, http.MethodPut, "/admin/devices/server-profile", map[string]any{
+		"id": device.Id, "profile_id": profileID,
+	})
+	adminJSON(t, application, http.MethodPut, "/admin/devices/group", map[string]any{
+		"id": device.Id, "group_id": 0,
+	})
+	preview = adminJSON(t, application, http.MethodGet, fmt.Sprintf("/admin/devices/server-profile-preview?device_id=%d", device.Id), nil)
+	effective = preview["data"].(map[string]any)
+	if effective["profile_source"] != "device" {
+		t.Fatalf("moving groups unexpectedly cleared the device profile: %v", effective)
+	}
+	adminJSON(t, application, http.MethodPut, "/admin/devices/server-profile", map[string]any{
+		"id": device.Id, "profile_id": 0,
+	})
+	adminJSON(t, application, http.MethodPut, "/admin/devices/global-server-profile", map[string]any{
+		"profile_id": profileID,
+	})
+	preview = adminJSON(t, application, http.MethodGet, fmt.Sprintf("/admin/devices/server-profile-preview?device_id=%d", device.Id), nil)
+	effective = preview["data"].(map[string]any)
+	if effective["profile_source"] != "global" {
+		t.Fatalf("device did not fall back to the global profile: %v", effective)
 	}
 	adminJSON(t, application, http.MethodPut, "/admin/devices/unattended", map[string]any{
 		"id": device.Id, "enabled": true, "root_command": "/system/xbin/su",

@@ -1,30 +1,34 @@
 package policy
 
 import (
-	"errors"
 	"rustdesk-api-server-pro/app/model"
 	"time"
 
 	"xorm.io/xorm"
 )
 
-func CurrentRevision(db *xorm.Engine) (int64, error) {
+func CurrentState(db *xorm.Engine) (model.StrategyState, error) {
 	state := model.StrategyState{Id: 1}
 	has, err := db.ID(state.Id).Get(&state)
 	if err != nil {
-		return 0, err
+		return state, err
 	}
 	if has {
-		return state.Revision, nil
+		return state, nil
 	}
 	state.Revision = time.Now().UnixMilli()
 	if _, err = db.Insert(&state); err != nil {
 		if has, loadErr := db.ID(state.Id).Get(&state); loadErr == nil && has {
-			return state.Revision, nil
+			return state, nil
 		}
-		return 0, err
+		return state, err
 	}
-	return state.Revision, nil
+	return state, nil
+}
+
+func CurrentRevision(db *xorm.Engine) (int64, error) {
+	state, err := CurrentState(db)
+	return state.Revision, err
 }
 
 func NextRevision(session *xorm.Session) (int64, error) {
@@ -47,7 +51,7 @@ func NextRevision(session *xorm.Session) (int64, error) {
 }
 
 func ResolveForDevice(db *xorm.Engine, device *model.Device) (Effective, error) {
-	revision, err := CurrentRevision(db)
+	state, err := CurrentState(db)
 	if err != nil {
 		return Effective{}, err
 	}
@@ -56,81 +60,51 @@ func ResolveForDevice(db *xorm.Engine, device *model.Device) (Effective, error) 
 		rootCommand = "auto"
 	}
 	effective := Effective{
-		Revision:          revision,
+		Revision:          state.Revision,
 		UnattendedEnabled: device.UnattendedEnabled,
 		RootCommand:       rootCommand,
 	}
-	candidates := []struct {
-		scope  string
-		id     int
-		source string
-	}{{model.StrategyScopeDevice, device.Id, "device"}}
-	membership := model.DeviceGroupMember{}
-	hasMembership, err := db.Where("device_id = ?", device.Id).Get(&membership)
-	if err != nil {
-		return Effective{}, err
+	if profile, has, loadErr := loadEnabledProfile(db, device.StrategyProfileId); loadErr != nil {
+		return Effective{}, loadErr
+	} else if has {
+		return withProfile(effective, profile, "device"), nil
 	}
-	if hasMembership {
+	if device.StrategyGroupId > 0 {
 		group := model.DeviceGroup{}
-		if has, loadErr := db.ID(membership.GroupId).Where("enabled = ?", true).Get(&group); loadErr != nil {
+		if has, loadErr := db.ID(device.StrategyGroupId).Where("enabled = ?", true).Get(&group); loadErr != nil {
 			return Effective{}, loadErr
 		} else if has {
-			candidates = append(candidates, struct {
-				scope  string
-				id     int
-				source string
-			}{model.StrategyScopeGroup, group.Id, "group:" + group.Name})
+			if profile, profileFound, profileErr := loadEnabledProfile(db, group.ProfileId); profileErr != nil {
+				return Effective{}, profileErr
+			} else if profileFound {
+				return withProfile(effective, profile, "group:"+group.Name), nil
+			}
 		}
 	}
-	candidates = append(candidates, struct {
-		scope  string
-		id     int
-		source string
-	}{model.StrategyScopeGlobal, 0, "global"})
-	for _, candidate := range candidates {
-		assignment := model.ServerProfileAssignment{}
-		has, loadErr := db.Where("scope_type = ? AND scope_id = ?", candidate.scope, candidate.id).Get(&assignment)
-		if loadErr != nil {
-			return Effective{}, loadErr
-		}
-		if !has {
-			continue
-		}
-		profile := model.ServerProfile{}
-		has, loadErr = db.ID(assignment.ProfileId).Where("enabled = ?", true).Get(&profile)
-		if loadErr != nil {
-			return Effective{}, loadErr
-		}
-		if !has {
-			continue
-		}
-		effective.ProfileEnabled = true
-		effective.ProfileSource = candidate.source
-		effective.Profile = ServerProfile{
-			ID: profile.Id, Name: profile.Name, IDServer: profile.IdServer,
-			RelayServer: profile.RelayServer, ServerKey: profile.ServerKey,
-			PasswordCiphertext: profile.PasswordCiphertext,
-		}
-		return effective, nil
+	if profile, has, loadErr := loadEnabledProfile(db, state.GlobalProfileId); loadErr != nil {
+		return Effective{}, loadErr
+	} else if has {
+		return withProfile(effective, profile, "global"), nil
 	}
 	return effective, nil
 }
 
-func AssignmentProfileID(db *xorm.Engine, scope string, id int) (int, error) {
-	assignment := model.ServerProfileAssignment{}
-	has, err := db.Where("scope_type = ? AND scope_id = ?", scope, id).Get(&assignment)
-	if err != nil || !has {
-		return 0, err
+func loadEnabledProfile(db *xorm.Engine, id int) (model.ServerProfile, bool, error) {
+	profile := model.ServerProfile{}
+	if id <= 0 {
+		return profile, false, nil
 	}
-	return assignment.ProfileId, nil
+	has, err := db.ID(id).Where("enabled = ?", true).Get(&profile)
+	return profile, has, err
 }
 
-func ValidateScope(scope string, id int) error {
-	if scope == model.StrategyScopeGlobal && id == 0 {
-		return nil
+func withProfile(effective Effective, profile model.ServerProfile, source string) Effective {
+	effective.ProfileEnabled = true
+	effective.ProfileSource = source
+	effective.Profile = ServerProfile{
+		ID: profile.Id, Name: profile.Name, IDServer: profile.IdServer,
+		RelayServer: profile.RelayServer, ServerKey: profile.ServerKey,
+		PasswordCiphertext: profile.PasswordCiphertext,
 	}
-	if id > 0 && (scope == model.StrategyScopeGroup || scope == model.StrategyScopeDevice) {
-		return nil
-	}
-	return errors.New("invalid strategy scope")
+	return effective
 }

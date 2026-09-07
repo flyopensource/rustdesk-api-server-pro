@@ -100,20 +100,14 @@ func (c *DevicesController) HandleList() mvc.Result {
 		if resolveErr != nil {
 			return c.Error(nil, resolveErr.Error())
 		}
-		directProfileId, resolveErr := devicepolicy.AssignmentProfileID(c.Db, model.StrategyScopeDevice, a.Id)
-		if resolveErr != nil {
-			return c.Error(nil, resolveErr.Error())
-		}
-		groupId, groupName := 0, ""
-		membership := model.DeviceGroupMember{}
-		if has, groupErr := c.Db.Where("device_id = ?", a.Id).Get(&membership); groupErr != nil {
-			return c.Error(nil, groupErr.Error())
-		} else if has {
+		groupName := ""
+		groupEnabled := false
+		if a.StrategyGroupId > 0 {
 			group := model.DeviceGroup{}
-			if _, groupErr = c.Db.ID(membership.GroupId).Get(&group); groupErr != nil {
+			if _, groupErr := c.Db.ID(a.StrategyGroupId).Get(&group); groupErr != nil {
 				return c.Error(nil, groupErr.Error())
 			}
-			groupId, groupName = group.Id, group.Name
+			groupName, groupEnabled = group.Name, group.Enabled
 		}
 		list = append(list, iris.Map{
 			"id":                       a.Id,
@@ -138,9 +132,10 @@ func (c *DevicesController) HandleList() mvc.Result {
 			"service_running":          a.ServiceRunning,
 			"unattended_error":         a.UnattendedError,
 			"unattended_reported_at":   a.UnattendedReportedAt.Format(config.TimeFormat),
-			"group_id":                 groupId,
+			"group_id":                 a.StrategyGroupId,
 			"group_name":               groupName,
-			"profile_assignment_id":    directProfileId,
+			"group_enabled":            groupEnabled,
+			"profile_assignment_id":    a.StrategyProfileId,
 			"profile_enabled":          effective.ProfileEnabled,
 			"profile_id":               effective.Profile.ID,
 			"profile_name":             effective.Profile.Name,

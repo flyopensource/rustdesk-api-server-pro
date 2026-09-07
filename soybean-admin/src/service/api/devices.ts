@@ -12,11 +12,11 @@ export function fetchDeviceGroups() {
   return request<Api.Devices.DeviceGroup[]>({ url: '/devices/groups' });
 }
 
-export function createDeviceGroup(data: Pick<Api.Devices.DeviceGroup, 'name' | 'enabled'>) {
+export function createDeviceGroup(data: Pick<Api.Devices.DeviceGroup, 'name' | 'enabled' | 'profile_id'>) {
   return request<{ id: number }>({ url: '/devices/groups', method: 'post', data });
 }
 
-export function updateDeviceGroup(data: Pick<Api.Devices.DeviceGroup, 'id' | 'name' | 'enabled'>) {
+export function updateDeviceGroup(data: Pick<Api.Devices.DeviceGroup, 'id' | 'name' | 'enabled' | 'profile_id'>) {
   return request({ url: '/devices/groups', method: 'put', data });
 }
 
@@ -24,8 +24,8 @@ export function deleteDeviceGroup(id: number) {
   return request({ url: '/devices/groups', method: 'delete', params: { id } });
 }
 
-export function updateDeviceGroupMembers(group_id: number, device_ids: number[]) {
-  return request({ url: '/devices/groups/members', method: 'put', data: { group_id, device_ids } });
+export function updateDeviceGroupAssignment(id: number, group_id: number) {
+  return request<Api.Devices.ServerProfilePreview>({ url: '/devices/group', method: 'put', data: { id, group_id } });
 }
 
 export function fetchServerProfiles() {
@@ -44,16 +44,16 @@ export function deleteServerProfile(id: number) {
   return request({ url: '/devices/server-profiles', method: 'delete', params: { id } });
 }
 
-export function updateServerProfileAssignment(
-  scope_type: Api.Devices.StrategyScope,
-  scope_id: number,
-  profile_id: number
-) {
-  return request<{ revision: number }>({
-    url: '/devices/server-profile-assignment',
+export function updateDeviceServerProfile(id: number, profile_id: number) {
+  return request<Api.Devices.ServerProfilePreview>({
+    url: '/devices/server-profile',
     method: 'put',
-    data: { scope_type, scope_id, profile_id }
+    data: { id, profile_id }
   });
+}
+
+export function updateGlobalServerProfile(profile_id: number) {
+  return request({ url: '/devices/global-server-profile', method: 'put', data: { profile_id } });
 }
 
 export function fetchServerProfilePreview(device_id: number) {

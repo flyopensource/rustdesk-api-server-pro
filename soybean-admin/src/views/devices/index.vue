@@ -11,10 +11,11 @@ import {
   fetchServerProfilePreview,
   fetchServerProfiles,
   updateDeviceGroup,
-  updateDeviceGroupMembers,
+  updateDeviceGroupAssignment,
+  updateDeviceServerProfile,
   updateDeviceUnattended,
-  updateServerProfile,
-  updateServerProfileAssignment
+  updateGlobalServerProfile,
+  updateServerProfile
 } from '@/service/api/devices';
 import { $t } from '@/locales';
 import { useAppStore } from '@/store/modules/app';
@@ -44,13 +45,24 @@ const profileForm = reactive({
   password_set: false,
   enabled: true
 });
-const groupForm = reactive({ id: 0, name: '', enabled: true, member_ids: '', profile_id: 0 });
+const groupForm = reactive({ id: 0, name: '', enabled: true, profile_id: 0 });
 const unattendedForm = reactive({ id: 0, rustdesk_id: '', enabled: false, root_command: 'auto' });
 let refreshDeviceList: () => void | Promise<void> = () => {};
 
-const profileOptions = computed(() => [
-  { label: '继承上级', value: 0 },
-  ...profiles.value.map(item => ({
+const serverProfileOptions = computed(() =>
+  profiles.value.map(item => ({
+    label: item.enabled ? item.name : `${item.name}（已停用）`,
+    value: item.id,
+    disabled: !item.enabled
+  }))
+);
+const deviceProfileOptions = computed(() => [{ label: '跟随设备组/全局', value: 0 }, ...serverProfileOptions.value]);
+const groupProfileOptions = computed(() => [{ label: '跟随全局', value: 0 }, ...serverProfileOptions.value]);
+const globalProfileOptions = computed(() => [{ label: '不设置全局配置', value: 0 }, ...serverProfileOptions.value]);
+
+const groupOptions = computed(() => [
+  { label: '未分组', value: 0 },
+  ...groups.value.map(item => ({
     label: item.enabled ? item.name : `${item.name}（已停用）`,
     value: item.id,
     disabled: !item.enabled
@@ -117,17 +129,36 @@ async function removeProfile(id: number) {
   }
 }
 
-async function assignProfile(scopeType: Api.Devices.StrategyScope, scopeId: number, profileId: number) {
-  const { error } = await updateServerProfileAssignment(scopeType, scopeId, profileId);
+async function assignGlobalProfile(profileId: number) {
+  const { error } = await updateGlobalServerProfile(profileId);
   if (!error) {
-    window.$message?.success(profileId ? '服务器配置已切换' : '已恢复继承上级配置');
+    window.$message?.success(profileId ? '全局默认配置已切换' : '已取消全局默认配置');
+    await loadStrategy();
+    await refreshDeviceList();
+  }
+}
+
+async function assignDeviceProfile(row: Api.Devices.Device, profileId: number) {
+  const { error } = await updateDeviceServerProfile(row.id!, profileId);
+  if (!error) {
+    window.$message?.success(profileId ? '设备服务器配置已切换' : '设备已恢复继承配置');
+    await loadStrategy();
+    await refreshDeviceList();
+  }
+}
+
+async function assignDeviceGroup(row: Api.Devices.Device, groupId: number) {
+  const { error } = await updateDeviceGroupAssignment(row.id!, groupId);
+  if (!error) {
+    const suffix = row.profile_assignment_id ? '；设备级服务器配置仍然优先' : '';
+    window.$message?.success(`${groupId ? '设备组已切换' : '设备已移出分组'}${suffix}`);
     await loadStrategy();
     await refreshDeviceList();
   }
 }
 
 function newGroup() {
-  Object.assign(groupForm, { id: 0, name: '', enabled: true, member_ids: '', profile_id: 0 });
+  Object.assign(groupForm, { id: 0, name: '', enabled: true, profile_id: 0 });
 }
 
 function editGroup(group: Api.Devices.DeviceGroup) {
@@ -135,24 +166,16 @@ function editGroup(group: Api.Devices.DeviceGroup) {
     id: group.id,
     name: group.name,
     enabled: group.enabled,
-    member_ids: group.device_ids.join(','),
     profile_id: group.profile_id
   });
 }
 
 async function saveGroup() {
-  const base = { name: groupForm.name.trim(), enabled: groupForm.enabled };
+  const base = { name: groupForm.name.trim(), enabled: groupForm.enabled, profile_id: groupForm.profile_id };
   const response = groupForm.id
     ? await updateDeviceGroup({ id: groupForm.id, ...base })
     : await createDeviceGroup(base);
   if (response.error) return;
-  const groupId = groupForm.id || response.data?.id || 0;
-  const deviceIds = groupForm.member_ids
-    .split(',')
-    .map(value => Number(value.trim()))
-    .filter(value => Number.isInteger(value) && value > 0);
-  if (!groupId || (await updateDeviceGroupMembers(groupId, [...new Set(deviceIds)])).error) return;
-  if ((await updateServerProfileAssignment('group', groupId, groupForm.profile_id)).error) return;
   window.$message?.success('设备组已保存');
   newGroup();
   await loadStrategy();
@@ -222,7 +245,21 @@ const {
       key: 'group_name',
       title: '设备组',
       align: 'center',
-      render: row => row.group_name || '未分组'
+      render: row => (
+        <NFlex vertical size={4} align="center">
+          <NSelect
+            class="w-160px"
+            value={row.group_id || 0}
+            options={groupOptions.value}
+            onUpdateValue={value => assignDeviceGroup(row, value)}
+          />
+          {row.group_id && !row.group_enabled ? (
+            <NTag size="small" type="warning">
+              所属组已停用
+            </NTag>
+          ) : null}
+        </NFlex>
+      )
     },
     {
       key: 'profile_name',
@@ -233,8 +270,8 @@ const {
           <NSelect
             class="w-180px"
             value={row.profile_assignment_id || 0}
-            options={profileOptions.value}
-            onUpdateValue={value => assignProfile('device', row.id!, value)}
+            options={deviceProfileOptions.value}
+            onUpdateValue={value => assignDeviceProfile(row, value)}
           />
           <span class="text-12px">
             {row.profile_name || '公共服务'} · {row.profile_source || '无配置'}
@@ -296,8 +333,8 @@ onMounted(loadStrategy);
           <NSelect
             class="w-180px"
             :value="globalProfileId"
-            :options="profileOptions"
-            @update:value="value => assignProfile('global', 0, value)"
+            :options="globalProfileOptions"
+            @update:value="assignGlobalProfile"
           />
           <NButton size="small" @click="profilesVisible = true">服务器配置</NButton>
           <NButton size="small" @click="groupsVisible = true">设备组</NButton>
@@ -350,7 +387,7 @@ onMounted(loadStrategy);
             <NListItem v-for="item in profiles" :key="item.id">
               <NThing
                 :title="item.name"
-                :description="`${item.id_server} / ${item.relay_server || '-'} / ${item.enabled ? '启用' : '停用'}`"
+                :description="`${item.id_server} / ${item.relay_server || '-'} / ${item.enabled ? '启用' : '停用'} · ${item.is_global_default ? '全局默认 · ' : ''}${item.group_count} 个组 / ${item.device_count} 台设备`"
               />
               <template #suffix>
                 <NFlex>
@@ -368,15 +405,9 @@ onMounted(loadStrategy);
       <NForm label-placement="left" label-width="100">
         <NFormItem label="组名"><NInput v-model:value="groupForm.name" /></NFormItem>
         <NFormItem label="服务器配置">
-          <NSelect v-model:value="groupForm.profile_id" :options="profileOptions" />
+          <NSelect v-model:value="groupForm.profile_id" :options="groupProfileOptions" />
         </NFormItem>
         <NFormItem label="启用"><NSwitch v-model:value="groupForm.enabled" /></NFormItem>
-        <NFormItem label="设备 ID">
-          <NInput
-            v-model:value="groupForm.member_ids"
-            placeholder="后台设备数字 ID，逗号分隔；设备会自动从原组移入此组"
-          />
-        </NFormItem>
         <NFlex justify="end">
           <NButton @click="newGroup">新建</NButton>
           <NButton type="primary" @click="saveGroup">保存设备组</NButton>
