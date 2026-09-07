@@ -30,11 +30,17 @@ This README lists only changes and additions in this fork. Refer to the original
   - Disabling a device disables its credential and rejects subsequent enrollment, heartbeat and system-information reports, while preserving groups, policies and history.
   - State changes and audit records are saved transactionally.
 
-- **Web-managed aliases and address-book publishing**
-  - Edit, clear and search device aliases in Web device management, including Chinese names.
+- **Web-managed device names and address-book publishing**
+  - Edit, clear and search device names in Web device management, including Chinese names.
   - Administrators explicitly select target accounts' personal address books. Existing passwords, tags and other personal fields are preserved.
   - Web-managed names take precedence; stale client writes cannot overwrite them.
-  - Actual RustDesk IDs remain unchanged. Connecting users can log in with an official client, refresh their address book, search an alias and select the device.
+  - Device names do not change connection IDs. Connecting users can log in with an official client, refresh their address book and find devices by name.
+
+- **Managed connection IDs**
+  - Assign a one-time connection ID to an enrolled managed Android device from Web device management, with pending, applied and failed states.
+  - The client reuses RustDesk's existing ID-change protocol against the active ID Server and saves the new ID only after confirmation; failures retain the old ID and can be retried.
+  - Keep hbbs 1.1.11 unchanged. An official connecting client configured with the same ID Server, key and relay can dial the applied ID without a custom build.
+  - Bind device identity to its numeric ID, public key and UUID so changing the connection ID does not create a duplicate device; managed address-book entries follow a successful change.
 
 - **Restricted single-device deletion**
   - Only disabled, offline devices can be deleted, after entering the complete RustDesk ID for confirmation.
@@ -42,14 +48,15 @@ This README lists only changes and additions in this fork. Refer to the original
 
 - **Build and local validation**
   - Package a static Linux amd64 API server with the Web frontend, avoiding a dependency on the build machine's glibc version.
-  - Add tests for device lifecycle, alias publishing, permission reporting, transaction rollback and concurrent consistency.
+  - Add tests for device lifecycle, name publishing, connection IDs, permission reporting, transaction rollback and concurrent consistency.
   - Add mocked-API browser tests. Real full-stack Playwright integration remains optional, not a normal packaging dependency.
   - Serialize local SQLite transactions through its connection pool to reduce concurrent write-lock conflicts.
 
 ## Scope and limitations
 
 - Automatic enrollment, unattended mode and storage policies require the accompanying managed Android client; these are not promised as stock-client capabilities.
-- Aliases are not Custom IDs and do not modify hbbs or provide direct alias dialing. The address-book alias feature does not require rebuilding the connecting official client; actual login, refresh and connection still require deployment-level acceptance testing.
+- Device names are only for Web and address-book identification; only an applied connection ID can be dialed directly. The controlled device requires the managed Android APK, while the official connecting client does not require customization.
+- The connection-ID flow uses the existing hbbs 1.1.11 protocol, but real policy delivery, ID Server update and official-client dialing still require deployment-level acceptance testing.
 - The API Server is a fixed control channel and is not changed by server-profile policy.
 - Disabling limits management API access, not necessarily existing remote sessions. Deletion is not a permanent ban; a client may enroll again.
 - Historical-data migration is not provided during development. Never commit private addresses, keys, passwords or configuration files to a public repository.
