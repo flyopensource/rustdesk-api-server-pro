@@ -6,6 +6,7 @@ type Device struct {
 	Id                     int       `xorm:"'id' int notnull pk autoincr"`
 	Cpu                    string    `xorm:"'cpu' varchar(255)"`
 	Hostname               string    `xorm:"'hostname' varchar(255)"`
+	Alias                  string    `xorm:"'alias' varchar(128) notnull default ''"`
 	RustdeskId             string    `xorm:"'rustdesk_id' varchar(255)"`
 	Memory                 string    `xorm:"'memory' varchar(50)"`
 	Os                     string    `xorm:"'os' varchar(255)"`

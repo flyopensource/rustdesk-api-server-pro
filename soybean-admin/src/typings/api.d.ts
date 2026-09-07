@@ -117,8 +117,14 @@ declare namespace Api {
   }
 
   namespace Devices {
+    type DeviceAlias = {
+      alias: string;
+      address_book_ids: number[];
+      targets: { id: number; user_id: number; username: string; name: string; enabled: boolean }[];
+    };
     type Device = Common.CommonRecord<{
       rustdesk_id: string;
+      alias: string;
       hostname: string;
       username: string;
       uuid: string;
@@ -205,7 +211,7 @@ declare namespace Api {
       password_set: boolean;
     };
     type DeviceSearchParams = CommonType.RecordNullable<
-      Pick<Api.Devices.Device, 'username' | 'hostname' | 'rustdesk_id'> & { state: string } & Api.Common.CommonSearchParams
+      Pick<Api.Devices.Device, 'username' | 'hostname' | 'rustdesk_id' | 'alias'> & { state: string } & Api.Common.CommonSearchParams
     >;
   }
 

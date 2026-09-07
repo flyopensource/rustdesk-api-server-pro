@@ -295,7 +295,8 @@ func (c *DeviceController) PostSysinfo() mvc.Result {
 	device.Os = form.Os
 	device.Username = form.Username
 	device.Version = NormalizeReportedVersion(form.Version, form.Ver)
-	if _, err := c.Db.ID(device.Id).Update(device); err != nil {
+	if _, err := c.Db.ID(device.Id).Where("disabled = ?", false).
+		Cols("cpu", "hostname", "memory", "os", "username", "version").Update(device); err != nil {
 		return responseError(iris.StatusInternalServerError, "failed to update sysinfo")
 	}
 	return mvc.Response{Text: "SYSINFO_UPDATED"}

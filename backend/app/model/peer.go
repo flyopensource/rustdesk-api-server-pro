@@ -4,9 +4,11 @@ import "time"
 
 type Peer struct {
 	Id               int       `xorm:"'id' int notnull pk autoincr"`
-	UserId           int       `xorm:"'user_id' int"`
-	AbId             int       `xorm:"'ab_id' int"`
-	RustdeskId       string    `xorm:"'rustdesk_id' varchar(255)"`
+	UserId           int       `xorm:"'user_id' int unique(book_peer)"`
+	AbId             int       `xorm:"'ab_id' int unique(book_peer)"`
+	RustdeskId       string    `xorm:"'rustdesk_id' varchar(255) unique(book_peer)"`
+	ManagedDeviceId  int       `xorm:"'managed_device_id' int notnull default 0 index"`
+	ManagedCreated   bool      `xorm:"'managed_created' tinyint notnull default 0"`
 	Hash             string    `xorm:"'hash' varchar(255)"`
 	Username         string    `xorm:"'username' varchar(255)"`
 	Password         string    `xorm:"'password' varchar(255)"`

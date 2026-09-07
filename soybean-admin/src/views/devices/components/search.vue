@@ -32,6 +32,7 @@ async function search() {
       <NCollapseItem :title="$t('common.search')" name="user-search">
         <NForm ref="formRef" :model="model" label-placement="left" :label-width="80">
           <NGrid responsive="screen" item-responsive>
+            <NFormItemGi span="24 s:12 m:6" label="设备别名" path="alias"><NInput v-model:value="model.alias" /></NFormItemGi>
             <NFormItemGi span="24 s:12 m:6" :label="$t('dataMap.device.hostname')" path="hostname">
               <NInput v-model:value="model.hostname" />
             </NFormItemGi>

@@ -20,6 +20,8 @@ type DevicesController struct {
 func (c *DevicesController) BeforeActivation(b mvc.BeforeActivation) {
 	b.Handle("GET", "/devices/list", "HandleList")
 	b.Handle("PUT", "/devices/enabled", "HandleDeviceEnabled")
+	b.Handle("GET", "/devices/alias", "HandleAliasTargets")
+	b.Handle("PUT", "/devices/alias", "HandleDeviceAlias")
 	b.Handle("PUT", "/devices/unattended", "HandleUnattended")
 	registerPolicyRoutes(b)
 }
@@ -72,11 +74,15 @@ func (c *DevicesController) HandleList() mvc.Result {
 	username := c.Ctx.URLParamDefault("username", "")
 	rustdesk_id := c.Ctx.URLParamDefault("rustdesk_id", "")
 	state := c.Ctx.URLParamDefault("state", "")
+	alias := c.Ctx.URLParamDefault("alias", "")
 	if state != "" && state != "active" && state != "disabled" {
 		return c.Error(nil, "InvalidDeviceState")
 	}
 	query := func() *xorm.Session {
 		q := c.Db.Table(&model.Device{})
+		if alias != "" {
+			q.Where("alias LIKE ?", "%"+alias+"%")
+		}
 		if state != "" {
 			q.Where("disabled = ?", state == "disabled")
 		}
@@ -121,6 +127,7 @@ func (c *DevicesController) HandleList() mvc.Result {
 			"id":                       a.Id,
 			"rustdesk_id":              a.RustdeskId,
 			"hostname":                 a.Hostname,
+			"alias":                    a.Alias,
 			"username":                 a.Username,
 			"uuid":                     a.Uuid,
 			"version":                  a.Version,

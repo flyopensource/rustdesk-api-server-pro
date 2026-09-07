@@ -153,7 +153,7 @@ func (c *AddressBookController) PostAb() mvc.Result {
 		}
 	}
 
-	_, err = session.Where("user_id = ?", user.Id).Delete(&model.Peer{})
+	_, err = session.Where("user_id = ? AND managed_device_id = 0", user.Id).Delete(&model.Peer{})
 	if err != nil {
 		_ = session.Rollback()
 		return mvc.Response{
@@ -184,7 +184,19 @@ func (c *AddressBookController) PostAb() mvc.Result {
 	}
 
 	peers := make([]*model.Peer, 0)
+	managed := []model.Peer{}
+	if err = session.Where("user_id = ? AND managed_device_id <> 0", user.Id).Find(&managed); err != nil {
+		_ = session.Rollback()
+		return responseError(iris.StatusInternalServerError, "failed to read managed peers")
+	}
+	managedIDs := map[string]bool{}
+	for _, peer := range managed {
+		managedIDs[peer.RustdeskId] = true
+	}
 	for _, peer := range abData.Peers {
+		if managedIDs[peer.Id] {
+			continue
+		}
 		peerTags := ""
 		b, err := json.Marshal(peer.Tags)
 		if err == nil {

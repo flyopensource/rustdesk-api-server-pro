@@ -25,6 +25,9 @@ func managementApp(t *testing.T) (*xorm.Engine, *iris.Application) {
 	if err = db.Sync(new(model.User), new(model.AuthToken), new(model.Device), new(model.DeviceCredential), new(model.DeviceOperation), new(model.DeviceGroup), new(model.ServerProfile), new(model.StrategyState)); err != nil {
 		t.Fatal(err)
 	}
+	if err = db.Sync(new(model.Peer), new(model.AddressBook), new(model.Tags)); err != nil {
+		t.Fatal(err)
+	}
 	user := model.User{Username: "admin", Status: 1, IsAdmin: true}
 	if _, err = db.Insert(&user); err != nil {
 		t.Fatal(err)

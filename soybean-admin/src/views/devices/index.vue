@@ -7,10 +7,12 @@ import {
   deleteDeviceGroup,
   deleteServerProfile,
   fetchDeviceGroups,
+  fetchDeviceAlias,
   fetchDevicesList,
   fetchServerProfilePreview,
   fetchServerProfiles,
   updateDeviceGroup,
+  updateDeviceAlias,
   updateDeviceEnabled,
   updateDeviceGroupAssignment,
   updateDeviceServerProfile,
@@ -34,6 +36,34 @@ const unattendedVisible = ref(false);
 const previewVisible = ref(false);
 const preview = ref<Api.Devices.ServerProfilePreview | null>(null);
 const currentApiServer = window.location.origin;
+const aliasVisible = ref(false);
+const aliasSaving = ref(false);
+const aliasForm = reactive({ id: 0, rustdesk_id: '', alias: '', address_book_ids: [] as number[] });
+const aliasTargets = ref<Api.Devices.DeviceAlias['targets']>([]);
+const aliasOptions = computed(() => aliasTargets.value.map(target => ({
+  value: target.id, label: `${target.username} · ${target.name}${target.enabled ? '' : '（账号停用）'}`, disabled: !target.enabled
+})));
+
+async function editAlias(row: Api.Devices.Device) {
+  const { data: result, error } = await fetchDeviceAlias(row.id!);
+  if (error || !result) return;
+  Object.assign(aliasForm, { id: row.id!, rustdesk_id: row.rustdesk_id, alias: result.alias, address_book_ids: [...result.address_book_ids] });
+  aliasTargets.value = result.targets;
+  aliasVisible.value = true;
+}
+
+async function saveAlias() {
+  aliasSaving.value = true;
+  try {
+    const { error } = await updateDeviceAlias({ id: aliasForm.id, alias: aliasForm.alias, address_book_ids: aliasForm.address_book_ids });
+    if (error) return;
+    aliasVisible.value = false;
+    window.$message?.success('已保存到所选地址簿，请在官方客户端刷新地址簿');
+    await refreshDeviceList();
+  } finally {
+    aliasSaving.value = false;
+  }
+}
 
 const profileForm = reactive({
   id: 0,
@@ -249,10 +279,16 @@ const {
 } = useTable({
   apiFn: fetchDevicesList,
   showTotal: true,
-  apiParams: { current: 1, size: 10, hostname: null, username: null, rustdesk_id: null, state: null },
+  apiParams: { current: 1, size: 10, hostname: null, username: null, rustdesk_id: null, state: null, alias: null },
   columns: () => [
     { key: 'id', title: 'ID', align: 'center' },
     { key: 'rustdesk_id', title: $t('dataMap.device.rustdesk_id'), align: 'center' },
+    { key: 'alias', title: '设备别名', align: 'center', render: row => (
+      <NFlex vertical align="center">
+        <span>{row.alias || '未命名'}</span>
+        <NButton size="small" onClick={() => editAlias(row)}>编辑别名</NButton>
+      </NFlex>
+    ) },
     { key: 'hostname', title: $t('dataMap.device.hostname'), align: 'center' },
     { key: 'username', title: $t('dataMap.device.username'), align: 'center' },
     { key: 'version', title: $t('dataMap.device.version'), align: 'center' },
@@ -473,6 +509,24 @@ onMounted(loadStrategy);
           <NButton type="primary" @click="saveUnattended">保存并发布</NButton>
         </NFlex>
       </template>
+    </NModal>
+
+    <NModal v-model:show="aliasVisible" preset="card" title="编辑设备别名" class="max-w-95vw w-600px" :mask-closable="!aliasSaving" :closable="!aliasSaving">
+      <NForm label-placement="top">
+        <NFormItem label="RustDesk ID"><NInput :value="aliasForm.rustdesk_id" disabled /></NFormItem>
+        <NFormItem label="设备别名（最多 128 字，留空清除）"><NInput v-model:value="aliasForm.alias" :disabled="aliasSaving" /></NFormItem>
+        <NFormItem label="发布到账号的个人地址簿">
+          <NSelect v-model:value="aliasForm.address_book_ids" multiple clearable filterable :options="aliasOptions" :disabled="aliasSaving" />
+        </NFormItem>
+      </NForm>
+      <NAlert type="info" :show-icon="false">
+        请先用目标账号登录官方客户端创建个人地址簿。仅所选账号会收到条目；名称以 Web 为准，不改变实际 ID。
+        取消目标会删除本功能新建的条目，原有个人条目保留并解除名称管理。官方客户端刷新后搜索别名、选择实际 ID 连接，不支持直接输入别名直连。
+      </NAlert>
+      <template #footer><NSpace justify="end">
+        <NButton :disabled="aliasSaving" @click="aliasVisible = false">取消</NButton>
+        <NButton type="primary" :loading="aliasSaving" @click="saveAlias">保存</NButton>
+      </NSpace></template>
     </NModal>
 
     <NModal v-model:show="previewVisible" preset="card" title="当前生效配置" class="max-w-95vw w-600px">

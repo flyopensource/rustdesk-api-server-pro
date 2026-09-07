@@ -1,5 +1,13 @@
 import { request } from '../request';
 
+export function fetchDeviceAlias(id: number) {
+  return request<Api.Devices.DeviceAlias>({ url: '/devices/alias', params: { id } });
+}
+
+export function updateDeviceAlias(data: { id: number; alias: string; address_book_ids: number[] }) {
+  return request({ url: '/devices/alias', method: 'put', data });
+}
+
 export function updateDeviceEnabled(id: number, enabled: boolean) {
   return request({ url: '/devices/enabled', method: 'put', data: { id, enabled } });
 }

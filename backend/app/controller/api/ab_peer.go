@@ -31,7 +31,10 @@ func (c *AddressBookPeerController) PostAbPeers() mvc.Result {
 	user := c.GetUser()
 
 	var ab model.AddressBook
-	_, err := c.Db.Where("user_id = ? and guid = ?", user.Id, abGuid).Get(&ab)
+	hasBook, err := c.Db.Where("user_id = ? and guid = ?", user.Id, abGuid).Get(&ab)
+	if !hasBook && err == nil {
+		return responseError(iris.StatusNotFound, "address book not found")
+	}
 	if err != nil {
 		return mvc.Response{
 			Object: iris.Map{
@@ -107,7 +110,10 @@ func (c *AddressBookPeerController) HandleAbPeerAdd() mvc.Result {
 
 	user := c.GetUser()
 	var ab model.AddressBook
-	_, err = c.Db.Where("user_id = ? and guid = ?", user.Id, abGuid).Get(&ab)
+	hasBook, err := c.Db.Where("user_id = ? and guid = ?", user.Id, abGuid).Get(&ab)
+	if !hasBook && err == nil {
+		return responseError(iris.StatusNotFound, "address book not found")
+	}
 	if err != nil {
 		return mvc.Response{
 			Object: iris.Map{
@@ -116,6 +122,13 @@ func (c *AddressBookPeerController) HandleAbPeerAdd() mvc.Result {
 		}
 	}
 
+	exists, err := c.Db.Where("user_id = ? and ab_id = ? and rustdesk_id = ?", user.Id, ab.Id, form.Id).Exist(new(model.Peer))
+	if err != nil {
+		return responseError(iris.StatusInternalServerError, "failed to check peer")
+	}
+	if exists {
+		return mvc.Response{Text: ""}
+	}
 	totalPeers, err := c.Db.Where("user_id = ? and ab_id = ?", user.Id, ab.Id).Count(&model.Peer{})
 	if err != nil {
 		return mvc.Response{
@@ -197,7 +210,10 @@ func (c *AddressBookPeerController) HandleAbPeerUpdate() mvc.Result {
 
 	user := c.GetUser()
 	var ab model.AddressBook
-	_, err = c.Db.Where("user_id = ? and guid = ?", user.Id, abGuid).Get(&ab)
+	hasBook, err := c.Db.Where("user_id = ? and guid = ?", user.Id, abGuid).Get(&ab)
+	if !hasBook && err == nil {
+		return responseError(iris.StatusNotFound, "address book not found")
+	}
 	if err != nil {
 		return mvc.Response{
 			Object: iris.Map{
@@ -250,7 +266,9 @@ func (c *AddressBookPeerController) HandleAbPeerUpdate() mvc.Result {
 		peer.Password = passwordResult.String()
 	}
 
-	_, err = c.Db.Where("id = ?", peer.Id).Cols("tags", "alias", "hash", "password").Update(&peer)
+	// Evaluate management ownership in SQL so a concurrent Web publication wins.
+	_, err = c.Db.Exec("UPDATE peer SET tags = ?, hash = ?, password = ?, alias = CASE WHEN managed_device_id = 0 THEN ? ELSE alias END WHERE id = ?",
+		peer.Tags, peer.Hash, peer.Password, peer.Alias, peer.Id)
 	if err != nil {
 		return mvc.Response{
 			Object: iris.Map{
@@ -278,7 +296,10 @@ func (c *AddressBookPeerController) HandleAbPeerDelete() mvc.Result {
 
 	user := c.GetUser()
 	var ab model.AddressBook
-	_, err = c.Db.Where("user_id = ? and guid = ?", user.Id, abGuid).Get(&ab)
+	hasBook, err := c.Db.Where("user_id = ? and guid = ?", user.Id, abGuid).Get(&ab)
+	if !hasBook && err == nil {
+		return responseError(iris.StatusNotFound, "address book not found")
+	}
 	if err != nil {
 		return mvc.Response{
 			Object: iris.Map{
@@ -287,7 +308,16 @@ func (c *AddressBookPeerController) HandleAbPeerDelete() mvc.Result {
 		}
 	}
 
-	c.Db.Where("user_id = ? and ab_id = ?", user.Id, ab.Id).In("rustdesk_id", ids).Delete(&model.Peer{})
+	managed, err := c.Db.Where("user_id = ? and ab_id = ? and managed_device_id <> 0", user.Id, ab.Id).In("rustdesk_id", ids).Exist(new(model.Peer))
+	if err != nil {
+		return responseError(iris.StatusInternalServerError, "failed to check managed peers")
+	}
+	if managed {
+		return responseError(iris.StatusConflict, "managed peers must be unpublished in Web device management")
+	}
+	if _, err = c.Db.Where("user_id = ? and ab_id = ? and managed_device_id = 0", user.Id, ab.Id).In("rustdesk_id", ids).Delete(&model.Peer{}); err != nil {
+		return responseError(iris.StatusInternalServerError, "failed to delete peers")
+	}
 
 	return mvc.Response{}
 }
