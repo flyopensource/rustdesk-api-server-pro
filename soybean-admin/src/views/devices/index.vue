@@ -7,14 +7,15 @@ import {
   deleteDeviceGroup,
   deleteDeviceRecord,
   deleteServerProfile,
-  fetchDeviceGroups,
   fetchDeviceAlias,
+  fetchDeviceGroups,
   fetchDevicesList,
   fetchServerProfilePreview,
   fetchServerProfiles,
-  updateDeviceGroup,
   updateDeviceAlias,
+  updateDeviceConnectionId,
   updateDeviceEnabled,
+  updateDeviceGroup,
   updateDeviceGroupAssignment,
   updateDeviceServerProfile,
   updateDeviceUnattended,
@@ -38,9 +39,11 @@ const previewVisible = ref(false);
 const preview = ref<Api.Devices.ServerProfilePreview | null>(null);
 const currentApiServer = window.location.origin;
 const aliasVisible = ref(false);
+const connectionIdVisible = ref(false);
 const deleteVisible = ref(false);
 const deleteSaving = ref(false);
 const deleteForm = reactive({ id: 0, rustdesk_id: '', confirmation: '' });
+let refreshDeviceList: () => void | Promise<void> = () => {};
 
 function confirmDelete(row: Api.Devices.Device) {
   Object.assign(deleteForm, { id: row.id!, rustdesk_id: row.rustdesk_id, confirmation: '' });
@@ -88,6 +91,59 @@ async function saveAlias() {
   }
 }
 
+const connectionIdSaving = ref(false);
+const connectionIdForm = reactive({
+  id: 0,
+  current_id: '',
+  connection_id: '',
+  status: 'unassigned' as Api.Devices.Device['connection_id_status']
+});
+const normalizedConnectionId = computed(() => connectionIdForm.connection_id.trim().toLowerCase());
+const connectionIdValid = computed(() => /^[a-z][a-z0-9-]{5,15}$/.test(normalizedConnectionId.value));
+const connectionIdErrors: Record<string, string> = {
+  manual_server_profile: '客户端正在使用手动服务器配置',
+  id_server_unavailable: '无法连接 ID Server',
+  id_taken: '连接 ID 已被占用',
+  id_registration_too_frequent: '修改过于频繁，请稍后重试',
+  id_server_not_supported: '当前 ID Server 不支持自定义 ID',
+  invalid_connection_id: 'ID Server 拒绝了连接 ID 格式',
+  id_server_error: 'ID Server 返回错误',
+  id_registration_failed: '连接 ID 注册失败'
+};
+
+function connectionIdStatusLabel(status: Api.Devices.Device['connection_id_status']) {
+  return { unassigned: '未设置', pending: '等待设备应用', applied: '已生效', failed: '应用失败' }[status];
+}
+
+function connectionIdStatusType(status: Api.Devices.Device['connection_id_status']) {
+  const types = { unassigned: 'default', pending: 'warning', applied: 'success', failed: 'error' } as const;
+  return types[status];
+}
+
+function editConnectionId(row: Api.Devices.Device) {
+  Object.assign(connectionIdForm, {
+    id: row.id,
+    current_id: row.rustdesk_id,
+    connection_id: row.requested_rustdesk_id || '',
+    status: row.connection_id_status
+  });
+  connectionIdVisible.value = true;
+}
+
+async function saveConnectionId() {
+  if (!connectionIdValid.value || normalizedConnectionId.value === connectionIdForm.current_id) return;
+  connectionIdSaving.value = true;
+  try {
+    const { error } = await updateDeviceConnectionId(connectionIdForm.id, normalizedConnectionId.value);
+    if (error) return;
+    connectionIdVisible.value = false;
+    window.$message?.success('连接 ID 已下发，等待设备在线应用');
+    await refreshDeviceList();
+  } finally {
+    connectionIdSaving.value = false;
+  }
+}
+
 const profileForm = reactive({
   id: 0,
   name: '',
@@ -101,7 +157,6 @@ const profileForm = reactive({
 });
 const groupForm = reactive({ id: 0, name: '', enabled: true, profile_id: 0 });
 const unattendedForm = reactive({ id: 0, rustdesk_id: '', enabled: false, root_command: 'auto' });
-let refreshDeviceList: () => void | Promise<void> = () => {};
 
 function toggleDevice(row: Api.Devices.Device) {
   window.$dialog?.warning({
@@ -305,11 +360,31 @@ const {
   apiParams: { current: 1, size: 10, hostname: null, username: null, rustdesk_id: null, state: null, alias: null },
   columns: () => [
     { key: 'id', title: 'ID', align: 'center' },
-    { key: 'rustdesk_id', title: $t('dataMap.device.rustdesk_id'), align: 'center' },
-    { key: 'alias', title: '设备别名', align: 'center', render: row => (
+    { key: 'rustdesk_id', width: 190, title: '连接 ID', align: 'center', render: row => (
+      <NFlex vertical size={4} align="center">
+        <span class="max-w-full break-all">{row.rustdesk_id}</span>
+        {row.requested_rustdesk_id && row.requested_rustdesk_id !== row.rustdesk_id ? (
+          <span class="max-w-full break-all text-12px">目标：{row.requested_rustdesk_id}</span>
+        ) : null}
+        <NTag size="small" type={connectionIdStatusType(row.connection_id_status)}>
+          {row.managed ? connectionIdStatusLabel(row.connection_id_status) : '非受管客户端'}
+        </NTag>
+        {row.connection_id_error ? (
+          <span class="max-w-full break-all text-12px text-error">
+            {connectionIdErrors[row.connection_id_error] || row.connection_id_error}
+          </span>
+        ) : null}
+        {row.managed && !row.disabled && !['pending', 'applied'].includes(row.connection_id_status) ? (
+          <NButton size="small" onClick={() => editConnectionId(row)}>
+            {row.connection_id_status === 'failed' ? '修改/重试' : '设置连接 ID'}
+          </NButton>
+        ) : null}
+      </NFlex>
+    ) },
+    { key: 'alias', title: '设备名称', align: 'center', render: row => (
       <NFlex vertical align="center">
         <span>{row.alias || '未命名'}</span>
-        <NButton size="small" onClick={() => editAlias(row)}>编辑别名</NButton>
+        <NButton size="small" onClick={() => editAlias(row)}>编辑名称</NButton>
       </NFlex>
     ) },
     { key: 'hostname', title: $t('dataMap.device.hostname'), align: 'center' },
@@ -548,17 +623,53 @@ onMounted(loadStrategy);
       </NSpace></template>
     </NModal>
 
-    <NModal v-model:show="aliasVisible" preset="card" title="编辑设备别名" class="max-w-95vw w-600px" :mask-closable="!aliasSaving" :closable="!aliasSaving">
+    <NModal
+      v-model:show="connectionIdVisible"
+      preset="card"
+      :title="connectionIdForm.status === 'failed' ? '修改或重试连接 ID' : '设置连接 ID'"
+      class="max-w-95vw w-560px"
+      :mask-closable="!connectionIdSaving"
+      :closable="!connectionIdSaving"
+    >
+      <NForm label-placement="top">
+        <NFormItem label="当前连接 ID"><NInput :value="connectionIdForm.current_id" disabled /></NFormItem>
+        <NFormItem label="新连接 ID">
+          <NInput
+            v-model:value="connectionIdForm.connection_id"
+            placeholder="例如 shop23-a01"
+            :maxlength="16"
+            :disabled="connectionIdSaving"
+          />
+        </NFormItem>
+      </NForm>
+      <NAlert :type="connectionIdValid || !connectionIdForm.connection_id ? 'info' : 'error'" :show-icon="false">
+        连接 ID 必须为 6–16 位，以小写字母开头，只能包含小写字母、数字和连字符。提交后由在线设备向 ID Server
+        申请；生效后不可再次修改，官方客户端可直接输入该 ID 连接。
+      </NAlert>
+      <template #footer><NSpace justify="end">
+        <NButton :disabled="connectionIdSaving" @click="connectionIdVisible = false">取消</NButton>
+        <NButton
+          type="primary"
+          :loading="connectionIdSaving"
+          :disabled="!connectionIdValid || normalizedConnectionId === connectionIdForm.current_id"
+          @click="saveConnectionId"
+        >
+          下发连接 ID
+        </NButton>
+      </NSpace></template>
+    </NModal>
+
+    <NModal v-model:show="aliasVisible" preset="card" title="编辑设备名称" class="max-w-95vw w-600px" :mask-closable="!aliasSaving" :closable="!aliasSaving">
       <NForm label-placement="top">
         <NFormItem label="RustDesk ID"><NInput :value="aliasForm.rustdesk_id" disabled /></NFormItem>
-        <NFormItem label="设备别名（最多 128 字，留空清除）"><NInput v-model:value="aliasForm.alias" :disabled="aliasSaving" /></NFormItem>
+        <NFormItem label="设备名称（最多 128 字，留空清除）"><NInput v-model:value="aliasForm.alias" :disabled="aliasSaving" /></NFormItem>
         <NFormItem label="发布到账号的个人地址簿">
           <NSelect v-model:value="aliasForm.address_book_ids" multiple clearable filterable :options="aliasOptions" :disabled="aliasSaving" />
         </NFormItem>
       </NForm>
       <NAlert type="info" :show-icon="false">
         请先用目标账号登录官方客户端创建个人地址簿。仅所选账号会收到条目；名称以 Web 为准，不改变实际 ID。
-        取消目标会删除本功能新建的条目，原有个人条目保留并解除名称管理。官方客户端刷新后搜索别名、选择实际 ID 连接，不支持直接输入别名直连。
+        取消目标会删除本功能新建的条目，原有个人条目保留并解除名称管理。官方客户端刷新后可按名称查找设备；直接连接请使用设备的连接 ID。
       </NAlert>
       <template #footer><NSpace justify="end">
         <NButton :disabled="aliasSaving" @click="aliasVisible = false">取消</NButton>

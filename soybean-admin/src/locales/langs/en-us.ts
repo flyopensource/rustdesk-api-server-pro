@@ -364,7 +364,15 @@ const local: App.I18n.Schema = {
     MailTemplateUpdateSuccess: 'Mail template modified successfully',
     NoEmailAddress: 'No e-mail address set',
     VerificationCodeError: 'Verification Code Error',
-    UUIDEmpty: 'UUID cannot be empty'
+    UUIDEmpty: 'UUID cannot be empty',
+    InvalidConnectionId: 'The connection ID format is invalid',
+    DeviceNotFound: 'The device does not exist',
+    DeviceDisabled: 'The device is disabled',
+    DeviceNotManaged: 'The device is not managed',
+    ConnectionIdAlreadyApplied: 'The connection ID is already applied and cannot be changed again',
+    ConnectionIdUnchanged: 'The new connection ID matches the current ID',
+    ConnectionIdTaken: 'The connection ID is already in use or pending assignment',
+    ConnectionIdAddressBookConflict: 'The connection ID conflicts with a published address book entry'
   }
 };
 

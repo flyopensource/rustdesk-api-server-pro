@@ -12,6 +12,14 @@ export function updateDeviceAlias(data: { id: number; alias: string; address_boo
   return request({ url: '/devices/alias', method: 'put', data });
 }
 
+export function updateDeviceConnectionId(id: number, connection_id: string) {
+  return request<{ connection_id: string; status: string; policy_revision: number }>({
+    url: '/devices/connection-id',
+    method: 'put',
+    data: { id, connection_id }
+  });
+}
+
 export function updateDeviceEnabled(id: number, enabled: boolean) {
   return request({ url: '/devices/enabled', method: 'put', data: { id, enabled } });
 }

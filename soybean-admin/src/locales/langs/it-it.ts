@@ -361,7 +361,15 @@ const local: App.I18n.Schema = {
     MailTemplateUpdateSuccess: 'Modello email modificato con successo',
     NoEmailAddress: 'Nessun indirizzo email impostato',
     VerificationCodeError: 'Errore codice di verifica',
-    UUIDEmpty: "L'UUID non può essere vuoto"
+    UUIDEmpty: "L'UUID non può essere vuoto",
+    InvalidConnectionId: "Il formato dell'ID di connessione non è valido",
+    DeviceNotFound: 'Il dispositivo non esiste',
+    DeviceDisabled: 'Il dispositivo è disabilitato',
+    DeviceNotManaged: 'Il dispositivo non è gestito',
+    ConnectionIdAlreadyApplied: "L'ID di connessione è già applicato e non può essere modificato",
+    ConnectionIdUnchanged: 'Il nuovo ID di connessione coincide con quello corrente',
+    ConnectionIdTaken: "L'ID di connessione è già in uso o in attesa di assegnazione",
+    ConnectionIdAddressBookConflict: "L'ID di connessione è in conflitto con una voce della rubrica"
   }
 };
 

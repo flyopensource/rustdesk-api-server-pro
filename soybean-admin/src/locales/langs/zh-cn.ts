@@ -364,7 +364,15 @@ const local: App.I18n.Schema = {
     MailTemplateUpdateSuccess: '邮件模板修改成功',
     NoEmailAddress: '未设置邮箱地址',
     VerificationCodeError: '验证码错误',
-    UUIDEmpty: 'UUID不能为空'
+    UUIDEmpty: 'UUID不能为空',
+    InvalidConnectionId: '连接 ID 格式无效',
+    DeviceNotFound: '设备不存在',
+    DeviceDisabled: '设备已停用',
+    DeviceNotManaged: '设备不是受管客户端',
+    ConnectionIdAlreadyApplied: '连接 ID 已生效，不允许再次修改',
+    ConnectionIdUnchanged: '新连接 ID 与当前 ID 相同',
+    ConnectionIdTaken: '连接 ID 已被占用或正在分配',
+    ConnectionIdAddressBookConflict: '连接 ID 与已发布的地址簿条目冲突'
   }
 };
 
