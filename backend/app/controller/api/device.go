@@ -122,6 +122,9 @@ func (c *DeviceController) PostRegister() mvc.Result {
 	}
 
 	credential := model.DeviceCredential{}
+	if device.Disabled {
+		return responseError(iris.StatusForbidden, "device disabled")
+	}
 	hasCredential, err := c.Db.Where("device_id = ?", device.Id).Get(&credential)
 	if err != nil {
 		return responseError(iris.StatusInternalServerError, "failed to resolve device credential")
@@ -148,7 +151,7 @@ func (c *DeviceController) PostRegister() mvc.Result {
 	} else if credential.PublicKey != form.PublicKey {
 		credential.PublicKey = form.PublicKey
 		credential.LastSeq = 0
-		if _, err = c.Db.ID(credential.Id).Cols("public_key", "last_seq").Update(&credential); err != nil {
+		if _, err = c.Db.ID(credential.Id).Where("enabled = ?", true).Cols("public_key", "last_seq").Update(&credential); err != nil {
 			return responseError(iris.StatusInternalServerError, "failed to rotate device credential")
 		}
 	}
@@ -181,7 +184,7 @@ func (c *DeviceController) authenticateRequest(form *api.SignedDeviceRequestForm
 	if err != nil || !ed25519.Verify(publicKey, BuildDeviceRequestMessage(form.DeviceId, form.Sequence, payload), signature) {
 		return nil, nil, responseError(iris.StatusUnauthorized, "device signature rejected")
 	}
-	affected, err := c.Db.Where("device_id = ? AND last_seq < ?", form.DeviceId, form.Sequence).
+	affected, err := c.Db.Where("device_id = ? AND enabled = ? AND last_seq < ?", form.DeviceId, true, form.Sequence).
 		Cols("last_seq").Update(&model.DeviceCredential{LastSeq: form.Sequence})
 	if err != nil {
 		return nil, nil, responseError(iris.StatusInternalServerError, "failed to update device sequence")
@@ -193,6 +196,9 @@ func (c *DeviceController) authenticateRequest(form *api.SignedDeviceRequestForm
 	has, err = c.Db.ID(form.DeviceId).Get(&device)
 	if err != nil || !has {
 		return nil, nil, responseError(iris.StatusUnauthorized, "registered device not found")
+	}
+	if device.Disabled {
+		return nil, nil, responseError(iris.StatusForbidden, "device disabled")
 	}
 	return payload, &device, nil
 }

@@ -127,6 +127,7 @@ declare namespace Api {
       memory: string;
       created_at: string;
       is_online: boolean;
+      disabled: boolean;
       unattended_enabled: boolean;
       root_command: string;
       policy_revision: number;
@@ -203,7 +204,7 @@ declare namespace Api {
       password_set: boolean;
     };
     type DeviceSearchParams = CommonType.RecordNullable<
-      Pick<Api.Devices.Device, 'username' | 'hostname' | 'rustdesk_id'> & Api.Common.CommonSearchParams
+      Pick<Api.Devices.Device, 'username' | 'hostname' | 'rustdesk_id'> & { state: string } & Api.Common.CommonSearchParams
     >;
   }
 

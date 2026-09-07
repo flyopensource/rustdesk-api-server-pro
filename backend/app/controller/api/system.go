@@ -62,6 +62,9 @@ func (c *SystemController) PostHeartbeat() mvc.Result {
 		}
 	}
 
+	if has && device.Disabled {
+		return responseError(iris.StatusForbidden, "device disabled")
+	}
 	if !has {
 		device.RustdeskId = form.RustdeskId
 		device.Uuid = form.Uuid
@@ -132,6 +135,9 @@ func (c *SystemController) PostSysinfo() mvc.Result {
 	}
 
 	device.Cpu = form.Cpu
+	if device.Disabled {
+		return responseError(iris.StatusForbidden, "device disabled")
+	}
 	device.Hostname = form.Hostname
 	device.RustdeskId = form.RustdeskId
 	device.Memory = form.Memory
@@ -140,7 +146,10 @@ func (c *SystemController) PostSysinfo() mvc.Result {
 	device.Uuid = form.Uuid
 	device.Version = NormalizeReportedVersion(form.Version, form.Ver)
 
-	c.Db.Where("id = ?", device.Id).Update(&device)
+	if _, err = c.Db.Where("id = ? AND disabled = ?", device.Id, false).
+		Cols("cpu", "hostname", "memory", "os", "username", "uuid", "version").Update(&device); err != nil {
+		return responseError(iris.StatusInternalServerError, "failed to update device")
+	}
 
 	return mvc.Response{
 		Text: "SYSINFO_UPDATED",

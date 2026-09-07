@@ -43,6 +43,9 @@ async function search() {
             </NFormItemGi>
 
             <NFormItemGi span="24 m:12">
+              <NSelect v-model:value="model.state" clearable placeholder="管理状态" :options="[{ label: '正常', value: 'active' }, { label: '已停用', value: 'disabled' }]" />
+            </NFormItemGi>
+            <NFormItemGi span="24 m:12">
               <NSpace class="w-full" justify="end">
                 <NButton @click="reset">
                   <template #icon>

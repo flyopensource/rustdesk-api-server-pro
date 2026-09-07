@@ -11,6 +11,7 @@ import {
   fetchServerProfilePreview,
   fetchServerProfiles,
   updateDeviceGroup,
+  updateDeviceEnabled,
   updateDeviceGroupAssignment,
   updateDeviceServerProfile,
   updateDeviceUnattended,
@@ -48,6 +49,20 @@ const profileForm = reactive({
 const groupForm = reactive({ id: 0, name: '', enabled: true, profile_id: 0 });
 const unattendedForm = reactive({ id: 0, rustdesk_id: '', enabled: false, root_command: 'auto' });
 let refreshDeviceList: () => void | Promise<void> = () => {};
+
+function toggleDevice(row: Api.Devices.Device) {
+  window.$dialog?.warning({
+    title: row.disabled ? '重新启用设备' : '停用设备',
+    content: `${row.rustdesk_id}：${row.disabled ? '恢复管理 API 访问' : '停止管理 API 访问及后续策略获取，不会断开已有远程会话'}`,
+    positiveText: '确认', negativeText: '取消',
+    onPositiveClick: async () => {
+      const { error } = await updateDeviceEnabled(row.id!, row.disabled);
+      if (error) return false;
+      await refreshDeviceList();
+      return true;
+    }
+  });
+}
 
 const serverProfileOptions = computed(() =>
   profiles.value.map(item => ({
@@ -234,13 +249,20 @@ const {
 } = useTable({
   apiFn: fetchDevicesList,
   showTotal: true,
-  apiParams: { current: 1, size: 10, hostname: null, username: null, rustdesk_id: null },
+  apiParams: { current: 1, size: 10, hostname: null, username: null, rustdesk_id: null, state: null },
   columns: () => [
     { key: 'id', title: 'ID', align: 'center' },
     { key: 'rustdesk_id', title: $t('dataMap.device.rustdesk_id'), align: 'center' },
     { key: 'hostname', title: $t('dataMap.device.hostname'), align: 'center' },
     { key: 'username', title: $t('dataMap.device.username'), align: 'center' },
     { key: 'version', title: $t('dataMap.device.version'), align: 'center' },
+    { key: 'disabled', title: '管理状态', align: 'center', render: row => (
+      <NFlex vertical align="center">
+        <NTag type={row.disabled ? 'warning' : 'success'}>{row.disabled ? '已停用' : '正常'}</NTag>
+        <span>{row.is_online ? '在线' : '离线'}</span>
+        <NButton size="small" onClick={() => toggleDevice(row)}>{row.disabled ? '重新启用' : '停用'}</NButton>
+      </NFlex>
+    ) },
     {
       key: 'group_name',
       title: '设备组',

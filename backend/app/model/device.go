@@ -13,6 +13,7 @@ type Device struct {
 	Uuid                   string    `xorm:"'uuid' varchar(255)"`
 	Version                string    `xorm:"'version' varchar(255)"`
 	IsOnline               bool      `xorm:"'is_online' tinyint"`
+	Disabled               bool      `xorm:"'disabled' tinyint notnull default 0"`
 	Conns                  int       `xorm:"'conns' int"`
 	StrategyGroupId        int       `xorm:"'strategy_group_id' int notnull default 0 index"`
 	StrategyProfileId      int       `xorm:"'strategy_profile_id' int notnull default 0 index"`

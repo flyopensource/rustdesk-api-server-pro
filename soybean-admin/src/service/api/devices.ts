@@ -1,5 +1,9 @@
 import { request } from '../request';
 
+export function updateDeviceEnabled(id: number, enabled: boolean) {
+  return request({ url: '/devices/enabled', method: 'put', data: { id, enabled } });
+}
+
 export function fetchDevicesList(params: any) {
   return request<Api.Devices.DevicesList>({ url: '/devices/list', params });
 }

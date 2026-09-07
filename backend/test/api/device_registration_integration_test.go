@@ -129,4 +129,18 @@ func TestDeviceRegistrationAndSignedHeartbeat(t *testing.T) {
 	if response := postJSON(t, application, "/api/device/register", registration); response.Code != iris.StatusForbidden {
 		t.Fatalf("disabled registration status = %d, body = %s", response.Code, response.Body.String())
 	}
+	for _, path := range []string{"/api/device/heartbeat", "/api/device/sysinfo"} {
+		if response := postJSON(t, application, path, heartbeat); response.Code != iris.StatusUnauthorized {
+			t.Fatalf("disabled credential accepted by %s: %s", path, response.Body.String())
+		}
+	}
+	credential.Enabled = true
+	if _, err = engine.ID(credential.Id).Cols("enabled").Update(&credential); err != nil {
+		t.Fatal(err)
+	}
+	heartbeat["sequence"] = 2
+	heartbeat["signature"] = base64.StdEncoding.EncodeToString(ed25519.Sign(privateKey, controller.BuildDeviceRequestMessage(deviceID, 2, payload)))
+	if response := postJSON(t, application, "/api/device/heartbeat", heartbeat); response.Code != iris.StatusOK {
+		t.Fatalf("enabled credential rejected: %s", response.Body.String())
+	}
 }

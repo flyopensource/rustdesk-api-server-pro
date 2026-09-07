@@ -19,6 +19,7 @@ type DevicesController struct {
 
 func (c *DevicesController) BeforeActivation(b mvc.BeforeActivation) {
 	b.Handle("GET", "/devices/list", "HandleList")
+	b.Handle("PUT", "/devices/enabled", "HandleDeviceEnabled")
 	b.Handle("PUT", "/devices/unattended", "HandleUnattended")
 	registerPolicyRoutes(b)
 }
@@ -70,8 +71,15 @@ func (c *DevicesController) HandleList() mvc.Result {
 	hostname := c.Ctx.URLParamDefault("hostname", "")
 	username := c.Ctx.URLParamDefault("username", "")
 	rustdesk_id := c.Ctx.URLParamDefault("rustdesk_id", "")
+	state := c.Ctx.URLParamDefault("state", "")
+	if state != "" && state != "active" && state != "disabled" {
+		return c.Error(nil, "InvalidDeviceState")
+	}
 	query := func() *xorm.Session {
 		q := c.Db.Table(&model.Device{})
+		if state != "" {
+			q.Where("disabled = ?", state == "disabled")
+		}
 
 		if hostname != "" {
 			q.Where("hostname LIKE ?", "%"+hostname+"%")
@@ -120,6 +128,7 @@ func (c *DevicesController) HandleList() mvc.Result {
 			"memory":                   a.Memory,
 			"created_at":               a.CreatedAt.Format(config.TimeFormat),
 			"is_online":                a.IsOnline,
+			"disabled":                 a.Disabled,
 			"unattended_enabled":       a.UnattendedEnabled,
 			"root_command":             a.RootCommand,
 			"policy_revision":          effective.Revision,

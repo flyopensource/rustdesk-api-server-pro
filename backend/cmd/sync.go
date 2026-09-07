@@ -28,6 +28,7 @@ var dbSyncCmd = &cobra.Command{
 			new(model.FileTransfer),
 			new(model.Device),
 			new(model.DeviceCredential),
+			new(model.DeviceOperation),
 			new(model.DeviceGroup),
 			new(model.ServerProfile),
 			new(model.StrategyState),
