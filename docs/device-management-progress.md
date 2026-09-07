@@ -41,4 +41,57 @@
 - 页面明确提示物理删除不是永久封禁，设备可再次注册，客户端缓存不保证立即删除。
 - 本地验证：Go 测试覆盖未授权、未停用、在线、ID 错误、不存在、重复删除、关联清理和审计失败回滚；Web 类型检查通过。未执行实际设备删除或联调。
 
-后续：整体验证与待办状态整理。
+## 第 5 步：本地总验证
+
+- Go 全量测试与 race 检查通过；新加并发一致性测试在 race 模式重复 5 次通过。
+- 重复测试发现 SQLite 多连接写事务的锁升级/提交冲突；生产 SQLite 连接池改为单连接串行事务，测试使用同一连接池配置。MySQL 连接池不变，未连接真实 MySQL 验证。
+- Web TypeScript 检查、生产构建通过；Chrome 隔离上下文及全模拟接口页面测试通过，覆盖取消编辑不提交、保存别名与目标参数、停用、删除 ID 输入校验和删除后刷新。
+- Dart 分析只有 3 条既有 MaterialStateProperty 弃用提示；受管 Android Kotlin 编译和默认/受管清单合并通过。
+- ARMv7 Android Rust `cargo ndk check --release --lib --features flutter,hwcodec` 通过（有编译警告），独立路径边界测试通过；未链接打包新的完整 APK。
+- TODO 将已实现、本地测试通过和暂缓联调分开记录。没有对真实 API/hbbs 写入，没有安装 APK 或改变主板权限/文件。
+
+### 复测命令
+
+在 API 仓库的 `backend` 目录：
+
+```sh
+go test ./...
+go test -race ./app/controller/... ./test/api/...
+go test -race -count=5 ./test/api/...
+```
+
+在 API 仓库的 `soybean-admin` 目录（模拟页面测试需要本机 Chrome）：
+
+```sh
+pnpm typecheck
+pnpm build
+pnpm exec playwright test -c playwright.mock.config.ts
+```
+
+在客户端仓库（沿用已配置的 NDK、VCPKG；Dart 使用 Flutter 3.27.3）：
+
+```sh
+VCPKGRS_TRIPLET=arm-neon-android cargo ndk --platform 21 --target armv7-linux-androideabi check --locked --offline --release --lib --features flutter,hwcodec
+rustc --edition=2021 --test src/platform/android_storage.rs -o /tmp/rustdesk-storage-tests
+/tmp/rustdesk-storage-tests
+dart analyze flutter/lib/models/server_model.dart flutter/lib/mobile/pages/server_page.dart
+```
+
+在客户端 `flutter/android` 目录，配置 Android Studio JBR 为 `JAVA_HOME`：
+
+```sh
+./gradlew :app:compileDebugKotlin -PmanagedStorage=true -Ptarget-platform=android-arm --offline --console=plain
+./gradlew :app:processDebugManifest -PmanagedStorage=false -Ptarget-platform=android-arm --offline --console=plain
+```
+
+### 分步提交
+
+| 步骤 | 仓库 | 提交 |
+| --- | --- | --- |
+| 1 停用/启用 | API | `5c3932a` |
+| 2 权限状态上报 | API | `76d5e18` |
+| 2 Android 权限与文件边界 | 客户端 | `53c572572` |
+| 3 Web 别名与地址簿 | API | `d7cbe07` |
+| 4 单设备删除 | API | `0290142` |
+
+第 5 步由包含本节的测试/文档提交记录。

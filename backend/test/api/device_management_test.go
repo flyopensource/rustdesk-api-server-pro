@@ -10,6 +10,8 @@ import (
 	appserver "rustdesk-api-server-pro/app"
 	"rustdesk-api-server-pro/app/model"
 	"rustdesk-api-server-pro/config"
+	database "rustdesk-api-server-pro/db"
+	"sync"
 	"testing"
 	"time"
 	"xorm.io/xorm"
@@ -17,7 +19,7 @@ import (
 
 func managementApp(t *testing.T) (*xorm.Engine, *iris.Application) {
 	t.Helper()
-	db, err := xorm.NewEngine("sqlite", filepath.Join(t.TempDir(), "test.db"))
+	db, err := database.NewEngine(&config.DbConfig{Driver: "sqlite", Dsn: filepath.Join(t.TempDir(), "test.db"), TimeZone: "UTC"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,6 +44,49 @@ func managementApp(t *testing.T) (*xorm.Engine, *iris.Application) {
 		t.Fatal(err)
 	}
 	return db, app
+}
+
+func TestConcurrentDeviceStateIsAtomic(t *testing.T) {
+	db, app := managementApp(t)
+	device := model.Device{RustdeskId: "concurrent-device"}
+	if _, err := db.Insert(&device); err != nil {
+		t.Fatal(err)
+	}
+	credential := model.DeviceCredential{DeviceId: device.Id, Enabled: true, PublicKey: "test-key"}
+	if _, err := db.Insert(&credential); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	results := make(chan bool, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(enabled bool) {
+			defer wg.Done()
+			<-start
+			res := managementRequest(t, app, http.MethodPut, "/admin/devices/enabled", "test-admin-token", map[string]any{"id": device.Id, "enabled": enabled})
+			results <- bytes.Contains(res.Body.Bytes(), []byte(`"code":200`))
+		}(i%2 == 0)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	for success := range results {
+		if !success {
+			t.Fatal("concurrent state request failed")
+		}
+	}
+	saved := model.Device{}
+	cred := model.DeviceCredential{}
+	if _, err := db.ID(device.Id).Get(&saved); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ID(credential.Id).Get(&cred); err != nil {
+		t.Fatal(err)
+	}
+	if saved.Disabled == cred.Enabled {
+		t.Fatal("concurrent lifecycle operation left inconsistent credential state")
+	}
 }
 
 func managementRequest(t *testing.T, app http.Handler, method, path, token string, body any) *httptest.ResponseRecorder {

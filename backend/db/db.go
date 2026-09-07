@@ -22,6 +22,12 @@ func NewEngine(cfg *config.DbConfig) (*xorm.Engine, error) {
 	engine.ShowSQL(cfg.ShowSql)
 	engine.SetMaxIdleConns(100)
 	engine.SetMaxOpenConns(100)
+	if cfg.Driver == "sqlite" {
+		// SQLite has one writer; serialize local transactions to avoid lock upgrades
+		// and failed COMMITs leaving a pooled connection locked.
+		engine.SetMaxIdleConns(1)
+		engine.SetMaxOpenConns(1)
+	}
 	DbEngine = engine
 	return engine, nil
 }

@@ -8,6 +8,7 @@ import (
 	"rustdesk-api-server-pro/app/model"
 	"rustdesk-api-server-pro/config"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -60,6 +61,34 @@ func TestManagedDeviceAlias(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		adminJSON(t, app, http.MethodPut, path, form("  上海店一号机  ", books[0].Id))
 	}
+	var wg sync.WaitGroup
+	results := make(chan bool, 2)
+	for _, alias := range []string{"parallel-A", "parallel-B"} {
+		wg.Add(1)
+		go func(alias string) {
+			defer wg.Done()
+			res := managementRequest(t, app, http.MethodPut, path, "test-admin-token", form(alias, books[0].Id))
+			results <- bytes.Contains(res.Body.Bytes(), []byte(`"code":200`))
+		}(alias)
+	}
+	wg.Wait()
+	close(results)
+	for success := range results {
+		if !success {
+			t.Fatal("concurrent alias request failed")
+		}
+	}
+	concurrentDevice, concurrentPeer := model.Device{}, model.Peer{}
+	if _, err := db.ID(device.Id).Get(&concurrentDevice); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ID(personal.Id).Get(&concurrentPeer); err != nil {
+		t.Fatal(err)
+	}
+	if concurrentDevice.Alias != concurrentPeer.Alias {
+		t.Fatal("concurrent publication lost atomicity")
+	}
+	adminJSON(t, app, http.MethodPut, path, form("上海店一号机", books[0].Id))
 	readPeer := func(id int) model.Peer {
 		t.Helper()
 		peer := model.Peer{}
