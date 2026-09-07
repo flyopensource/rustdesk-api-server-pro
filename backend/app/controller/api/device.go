@@ -232,13 +232,17 @@ func (c *DeviceController) PostHeartbeat() mvc.Result {
 		if len(status.RootExecutor) > 255 {
 			status.RootExecutor = status.RootExecutor[:255]
 		}
-		_, _ = c.Db.ID(device.Id).Cols("applied_revision", "unattended_status", "root_executor", "root_available", "screen_capture_ready", "accessibility_ready", "service_running", "unattended_error", "unattended_reported_at").Update(&model.Device{
+		_, err := c.Db.ID(device.Id).Cols("applied_revision", "unattended_status", "root_executor", "root_available", "screen_capture_ready", "accessibility_ready", "all_files_access_ready", "service_running", "unattended_error", "unattended_reported_at").Update(&model.Device{
 			AppliedRevision: status.PolicyRevision, UnattendedStatus: status.Status,
 			RootExecutor: status.RootExecutor, RootAvailable: status.RootAvailable,
 			ScreenCaptureReady: status.ScreenCaptureReady, AccessibilityReady: status.AccessibilityReady,
-			ServiceRunning: status.ServiceRunning, UnattendedError: status.LastError,
+			AllFilesAccessReady: status.AllFilesAccessReady,
+			ServiceRunning:      status.ServiceRunning, UnattendedError: status.LastError,
 			UnattendedReportedAt: time.Now(),
 		})
+		if err != nil {
+			return responseError(iris.StatusInternalServerError, "failed to update unattended status")
+		}
 	}
 	if status := form.ServerProfileStatus; status != nil {
 		if status.ActiveSource != "manual" && status.ActiveSource != "provisioned" && status.ActiveSource != "waiting" && status.ActiveSource != "public" {

@@ -137,6 +137,7 @@ declare namespace Api {
       root_available: boolean;
       screen_capture_ready: boolean;
       accessibility_ready: boolean;
+      all_files_access_ready: boolean;
       service_running: boolean;
       unattended_error: string;
       unattended_reported_at: string;

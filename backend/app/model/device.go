@@ -26,6 +26,7 @@ type Device struct {
 	RootAvailable          bool      `xorm:"'root_available' tinyint"`
 	ScreenCaptureReady     bool      `xorm:"'screen_capture_ready' tinyint"`
 	AccessibilityReady     bool      `xorm:"'accessibility_ready' tinyint"`
+	AllFilesAccessReady    bool      `xorm:"'all_files_access_ready' tinyint"`
 	ServiceRunning         bool      `xorm:"'service_running' tinyint"`
 	UnattendedError        string    `xorm:"'unattended_error' varchar(255)"`
 	UnattendedReportedAt   time.Time `xorm:"'unattended_reported_at' datetime"`

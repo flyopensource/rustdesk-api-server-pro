@@ -334,6 +334,10 @@ const {
             {row.applied_revision || 0}/{row.policy_revision || 0}
           </span>
           {row.unattended_error ? <span class="text-12px text-error">{row.unattended_error}</span> : null}
+          <NTag size="small" type={row.all_files_access_ready ? 'success' : 'warning'}>
+            文件权限：{row.all_files_access_ready ? '就绪' : '未就绪'}
+          </NTag>
+          <span class="text-12px">{row.unattended_reported_at}</span>
         </NFlex>
       )
     }

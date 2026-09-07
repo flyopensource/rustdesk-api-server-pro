@@ -143,4 +143,19 @@ func TestDeviceRegistrationAndSignedHeartbeat(t *testing.T) {
 	if response := postJSON(t, application, "/api/device/heartbeat", heartbeat); response.Code != iris.StatusOK {
 		t.Fatalf("enabled credential rejected: %s", response.Body.String())
 	}
+	for i, ready := range []bool{true, false} {
+		payload, err = json.Marshal(map[string]any{"id": "123456789", "uuid": "device-uuid", "unattended_status": map[string]any{"all_files_access_ready": ready, "status": "partial"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		sequence := int64(i + 3)
+		statusRequest := map[string]any{"device_id": deviceID, "sequence": sequence, "payload": base64.StdEncoding.EncodeToString(payload), "signature": base64.StdEncoding.EncodeToString(ed25519.Sign(privateKey, controller.BuildDeviceRequestMessage(deviceID, sequence, payload)))}
+		if response := postJSON(t, application, "/api/device/heartbeat", statusRequest); response.Code != iris.StatusOK {
+			t.Fatalf("status rejected: %s", response.Body.String())
+		}
+		saved := model.Device{}
+		if _, err = engine.ID(deviceID).Get(&saved); err != nil || saved.AllFilesAccessReady != ready {
+			t.Fatalf("permission status not persisted: %v", err)
+		}
+	}
 }

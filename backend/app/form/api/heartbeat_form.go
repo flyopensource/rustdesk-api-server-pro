@@ -18,12 +18,13 @@ type ServerProfileStatusForm struct {
 }
 
 type UnattendedStatusForm struct {
-	PolicyRevision     int64  `json:"policy_revision"`
-	Status             string `json:"status"`
-	RootExecutor       string `json:"root_executor"`
-	RootAvailable      bool   `json:"root_available"`
-	ScreenCaptureReady bool   `json:"screen_capture_ready"`
-	AccessibilityReady bool   `json:"accessibility_ready"`
-	ServiceRunning     bool   `json:"service_running"`
-	LastError          string `json:"last_error"`
+	PolicyRevision      int64  `json:"policy_revision"`
+	Status              string `json:"status"`
+	RootExecutor        string `json:"root_executor"`
+	RootAvailable       bool   `json:"root_available"`
+	ScreenCaptureReady  bool   `json:"screen_capture_ready"`
+	AccessibilityReady  bool   `json:"accessibility_ready"`
+	AllFilesAccessReady bool   `json:"all_files_access_ready"`
+	ServiceRunning      bool   `json:"service_running"`
+	LastError           string `json:"last_error"`
 }

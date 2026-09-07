@@ -138,6 +138,7 @@ func (c *DevicesController) HandleList() mvc.Result {
 			"root_available":           a.RootAvailable,
 			"screen_capture_ready":     a.ScreenCaptureReady,
 			"accessibility_ready":      a.AccessibilityReady,
+			"all_files_access_ready":   a.AllFilesAccessReady,
 			"service_running":          a.ServiceRunning,
 			"unattended_error":         a.UnattendedError,
 			"unattended_reported_at":   a.UnattendedReportedAt.Format(config.TimeFormat),
