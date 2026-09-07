@@ -108,29 +108,47 @@ func (c *DeviceController) PostRegister() mvc.Result {
 	}
 
 	device := model.Device{}
-	hasDevice, err := c.Db.Where("rustdesk_id = ?", form.RustdeskId).Get(&device)
+	credential := model.DeviceCredential{}
+	hasCredential, err := c.Db.Where("public_key = ?", form.PublicKey).Get(&credential)
 	if err != nil {
 		return responseError(iris.StatusInternalServerError, "failed to resolve device")
+	}
+	hasDevice := false
+	if hasCredential {
+		hasDevice, err = c.Db.ID(credential.DeviceId).Get(&device)
+	} else {
+		hasDevice, err = c.Db.Where("rustdesk_id = ?", form.RustdeskId).Get(&device)
+	}
+	if err != nil {
+		return responseError(iris.StatusInternalServerError, "failed to resolve device")
+	}
+	if hasCredential && !hasDevice {
+		return responseError(iris.StatusConflict, "device credential is orphaned")
 	}
 	if !hasDevice {
 		device.RustdeskId = form.RustdeskId
 		device.Uuid = form.Uuid
+		device.ConnectionIdStatus = model.ConnectionIdUnassigned
 		device.IsOnline = true
 		if _, err = c.Db.Insert(&device); err != nil {
 			return responseError(iris.StatusInternalServerError, "failed to create device")
 		}
 	}
 
-	credential := model.DeviceCredential{}
 	if device.Disabled {
 		return responseError(iris.StatusForbidden, "device disabled")
 	}
-	hasCredential, err := c.Db.Where("device_id = ?", device.Id).Get(&credential)
-	if err != nil {
-		return responseError(iris.StatusInternalServerError, "failed to resolve device credential")
+	if !hasCredential {
+		hasCredential, err = c.Db.Where("device_id = ?", device.Id).Get(&credential)
+		if err != nil {
+			return responseError(iris.StatusInternalServerError, "failed to resolve device credential")
+		}
 	}
 	if hasCredential && !credential.Enabled {
 		return responseError(iris.StatusForbidden, "device credential disabled")
+	}
+	if hasCredential && device.RustdeskId != form.RustdeskId {
+		return responseError(iris.StatusConflict, "device connection id mismatch")
 	}
 	if device.Uuid != "" && device.Uuid != form.Uuid {
 		if hasCredential {
