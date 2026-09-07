@@ -1,409 +1,59 @@
-## This project will be rewrite
-See https://github.com/lantongxue/rustdesk-api-server-pro/issues/30
+# RustDesk API Server Pro
 
-Rustdesk Api Server Pro
-============
+[English](README.md) | [简体中文](README_CN.md)
 
-[English](https://github.com/rustdesk/rustdesk) | [简体中文](https://github.com/lantongxue/rustdesk-api-server-pro/blob/master/README_CN.md)
+This fork builds on [lantongxue/rustdesk-api-server-pro](https://github.com/lantongxue/rustdesk-api-server-pro). Thank you to the original author and contributors for the API server and Web management foundation, and to the [RustDesk](https://github.com/rustdesk/rustdesk) open-source project.
 
-This is an open source Api server based on the open source [RustDesk](https://github.com/rustdesk/rustdesk) client, the implementation of the client all Api interfaces, and provides a Web-UI for the management of data.
+This README lists only changes and additions in this fork. Refer to the original project for its baseline features and general usage documentation.
 
-![Dashboard](./img/1.jpeg "Dashboard")
+![Dashboard](img/dashboard-en.jpg)
 
-> We strive to achieve functionality with the simplest possible code and structure!
+## Changes and additions
 
-## Special Sponsor
+- **Automatic enrollment for managed Android devices**
+  - A customized Android client obtains its initial API address through encrypted `rud.cfg`, without a prior user login.
+  - Devices use individual signing credentials for heartbeat, system information and subsequent policy retrieval, with signature verification, replay protection and encrypted policy delivery.
 
-CDN acceleration and security protection for his project are sponsored by Tencent EdgeOne.
+- **Device groups and multiple server profiles**
+  - Manage complete profiles containing ID Server, Relay Server, Server Key and a permanent password in the Web UI.
+  - Select profiles at global, group or device scope. A device chooses one complete profile in device → enabled group → global order, without mixing individual fields.
+  - Change group or direct-profile assignments from the device list; moving a device does not clear its direct profile.
+  - Preview effective settings and their source. Permanent passwords are encrypted at rest and are not returned in plaintext by management queries.
 
-<a href="https://edgeone.ai/?from=github" target="_blank">Best Asian CDN, Edge, and Secure Solutions - Tencent EdgeOne</a>
+- **Per-device unattended management**
+  - Configure unattended mode and its Root executor in the Web UI for the managed client to apply.
+  - View Root, screen capture, accessibility, all-files access, service readiness and the latest reported result.
+  - Private Android builds check and request storage permissions; missing permissions must not be reported as complete unattended success.
 
-<a href="https://edgeone.ai/?from=github" target="_blank">![edgeone](https://edgeone.ai/media/34fe3a45-492d-4ea4-ae5d-ea1087ca7b4b.png)</a>
+- **Device disable and enable operations**
+  - Add management state, filtering and confirmed disable/enable actions.
+  - Disabling a device disables its credential and rejects subsequent enrollment, heartbeat and system-information reports, while preserving groups, policies and history.
+  - State changes and audit records are saved transactionally.
 
-## Features
+- **Web-managed aliases and address-book publishing**
+  - Edit, clear and search device aliases in Web device management, including Chinese names.
+  - Administrators explicitly select target accounts' personal address books. Existing passwords, tags and other personal fields are preserved.
+  - Web-managed names take precedence; stale client writes cannot overwrite them.
+  - Actual RustDesk IDs remain unchanged. Connecting users can log in with an official client, refresh their address book, search an alias and select the device.
 
-- Synchronized RuskDesk version (Currently adapted client: 1.4.6)
-- Pure Go implementation of all interfaces
-- Visual management interface
-  - Internationalization support
-  - Statistics panel
-  - User Management
-  - Device group and membership management
-  - Multiple RustDesk Server profiles with global, group, and per-device quick switching
-  - Effective device configuration preview
-  - 2FA & Email Verify Code
-  - Session Management
-  - Log Audit
-- Automatic Android unattended-device enrollment without a prior user login
-- Device-signed heartbeat/sysinfo requests and encrypted policy delivery
-- Per-device unattended settings and remote server-profile switching
-- Deterministic whole-profile selection in device, group, then global order
-- Lightweight & Cross Platform
-  - Minimal sqlite
-  - Support for major operating systems and architectures
-
-## Android unattended enrollment and server-profile policy
-
-On first launch, a provisioned Android client downloads an encrypted `rud.cfg` from the fixed URL injected at build time. It obtains the initial API Server address and enrolls automatically. After enrollment, the device uses its own signing credential for heartbeat, sysinfo, and policy requests, without a user access token. This supports unattended Android boards.
-
-The Web management device page supports:
-
-- maintaining multiple complete server profiles, each containing ID Server, Relay Server, Server Key, and permanent password;
-- quickly selecting a whole profile at global, device-group, or per-device scope;
-- creating device groups and maintaining membership, with at most one group per device;
-- enabling unattended access per device and entering a Root executor manually; `auto` probes `su` and `testsu`, while another single executable name or absolute path can also be used;
-- previewing the effective server profile, source, and unattended setting for a device;
-- increasing the global strategy revision and delivering a complete policy to devices that need an update;
-- encrypting permanent passwords at rest and returning only their configured state through management and preview APIs.
-
-Server-profile fields are not merged. A device selects exactly one complete profile in this order: its direct assignment, its enabled group, then the global default. An unassigned scope inherits from the next scope; an assignment to a disabled profile also falls back. Unattended access is not inherited from global or group scope and is stored only on each device.
-
-The API Server is the fixed control channel. It is not part of a server-profile template and cannot be changed by policy. The management page displays the current site origin; Android clients use the `provisioning_api_server` from the encrypted `rud.cfg` downloaded through their build-time fixed URL. Switching profiles changes only ID Server, Relay Server, Server Key, and permanent password.
-
-> **Public repository security:** Never commit the real `rud.cfg` URL, SecretBox key, initial device-enrollment key, signing private key, Server Key, or permanent password to source code, README files, build logs, or Git history. Inject client build values with GitHub Actions Secrets/Variables and server keys with deployment secrets. The built APK necessarily contains the fixed bootstrap URL and initial client credential, so treat the APK itself as a deployment credential.
-
-## Compatibility Statement (RustDesk 1.4.6)
-
-- Target client baseline: `1.4.6`
-- Covered in this adaptation:
-  - Heartbeat/sysinfo payload compatibility
-  - Version capability gate (`translate_mode` enabled at `>=1.4.6`)
-  - Auth payload compatibility (strict required fields, tolerant unknown fields)
-  - `rustdesk install --version` supports both `1.4.6` and `Branch_1.4.6`
-- Verification commands:
-  - `cd backend && go test ./...`
-  - `cd soybean-admin && pnpm typecheck && pnpm lint && pnpm build`
-
-## Playwright E2E (Full-stack)
-
-- Covered cases: `login`, `devices`, `users`, `audit`
-- E2E test files are under `soybean-admin/tests/e2e`
-
-### Prerequisites
-
-1. Start backend API and create admin user:
-
-```shell
-cd backend
-go run . sync
-go run . user add admin admin123456 --admin
-E2E_SKIP_CAPTCHA=true go run . start
-```
-
-2. Install frontend dependencies and Playwright browser:
-
-```shell
-cd soybean-admin
-pnpm i
-npx playwright install chromium
-```
-
-### Run tests
-
-```shell
-cd soybean-admin
-E2E_ADMIN_USER=admin E2E_ADMIN_PASS=admin123456 pnpm test:e2e
-```
-
-### CI
-
-- `build-release.yml` supports optional full-stack Playwright E2E.
-- The release job currently builds only `linux-amd64.zip`, containing the frontend `dist`, Go API Server, and `server.yaml`. Manual runs upload an artifact, while version tags also create a Release.
-- Windows, macOS, and ARM64 packages remain disabled until they have a deployment and validation requirement.
-- Trigger `workflow_dispatch` with `run_playwright_e2e=true`.
-
-## Deploying with Docker(recommend)
-
-1. pull image
- ```shell
- docker pull ghcr.io/lantongxue/rustdesk-api-server-pro:latest
- ```
-
-2. create config
-```shell
-cat > /your/path/server.yaml <<EOF
-signKey: "" # prefer injecting RUD_API_SIGN_KEY
-debugMode: true # debug mode
-db:
-  driver: "sqlite"
-  dsn: "./server.db"
-  timeZone: "Asia/Shanghai" # setting the time zone fixes the database creation time problem
-  showSql: false
-  # driver: "mysql"
-  # dsn: "root:123@tcp(localhost:3306)/test?charset=utf8mb4"
-httpConfig:
-  printRequestLog: true
-  staticdir: "./dist"
-  port: ":12345" # api server port
-
-smtpConfig:
-  host: "127.0.0.1"
-  port: 1025
-  username: "test"
-  password: "test"
-  encryption: "none" # none ssl/tls starttls
-  from: "test@localhost.com"
-
-jobsConfig:
-  deviceCheckJob:
-  duration: 30
-EOF
-
-```
-
-3. run image
-```shell
-docker run \
-  --name rustdesk-api-server-pro \
-  -d \
-  -e ADMIN_USER=admin \ #Administrator account (optional)
-  -e ADMIN_PASS=yourpassword \ #Administrator password (optional)
-  -e TZ=Asia/Shanghai \ #must match the 'timeZone' setting in server.yaml
-  -e RUD_API_SIGN_KEY='<random-string-with-at-least-32-characters>' \
-  -p 8080:8080 \
-  -v /your/path:/app/data \
-  ghcr.io/lantongxue/rustdesk-api-server-pro:latest
-```
-
-4. add your admin account(This step can be ignored if an environment variable is set to initialize the administrator account password, but I still recommend that you create the administrator account this way instead of initializing it with an environment variable)
-   
-```shell
-docker exec rustdesk-api-server-pro rustdesk-api-server-pro user add admin yourpassword --admin
-```
-
-> The container image listens on port `8080` by default.
-
-> Default configuration file path `/app/data/server.yaml`, you can specify your own configuration file with `-v`.
-
-### Docker compose
-
-```yaml
-services:
-  rustdesk-api-server-pro:
-    container_name: rustdesk-api-server-pro
-    image: ghcr.io/lantongxue/rustdesk-api-server-pro:latest
-    environment:
-      - "ADMIN_USER=youruser"
-      - "ADMIN_PASS=yourpassword"
-      - "TZ=Asia/Shanghai"
-      - "RUD_API_SIGN_KEY=${RUD_API_SIGN_KEY:?set a random signing key with at least 32 characters}"
-    volumes:
-      - ./server.yaml:/app/data/server.yaml
-    network_mode: host
-    restart: unless-stopped
-```
-
-### Environment variables
-
-| Variables  | Default Values | Description                                                    |
-|:----------:|:--------------:|:--------------------------------------------------------------:|
-| ADMIN_USER | -              | Default administrator account                                  |
-| ADMIN_PASS | -              | Default administrator password                                 |
-| TZ         | -              | Container OS timezone; must match the app setting in YAML file |
-| RUD_API_SIGN_KEY | - | Admin token signing key, at least 32 characters; required to start the API Server |
-| RUD_DEVICE_ENROLLMENT_KEY_B64 | - | Base64-encoded 32-byte key required by unattended device registration |
-| RUD_CFG_SIGN_SEED_B64 | - | Private Ed25519 seed used to sign policies; store it as a secret |
-| RUD_CFG_SECRETBOX_KEY_B64 | - | Base64-encoded 32-byte SecretBox key used to encrypt policies |
-| RUD_CFG_KEY_ID | android-v1 | Policy key-version identifier; this is not a secret key |
-
-Run `rustdesk-api-server-pro sync` after upgrading to create or update the device-credential and `strategy_*` tables. The new policy implementation does not migrate old device-group or policy records; recreate server profiles, groups, and scope assignments in the management UI. Users, devices, device credentials, audit records, and other non-policy data remain intact. Provisioned Android clients register through `POST /api/device/register`, then use device-signed `/api/device/heartbeat` and `/api/device/sysinfo`; no user access token is required. Keep `RUD_DEVICE_ENROLLMENT_KEY_B64` equal to the value injected into the corresponding APK and provide it through the deployment secret store rather than committing it. A disabled device credential cannot reactivate itself with the shared enrollment key.
-
-The API Server validates its token signing key during startup. Prefer setting `RUD_API_SIGN_KEY` only through the deployment secret store; the server refuses to start when the key is missing or shorter than 32 characters. Existing private deployments may continue using `signKey` in `server.yaml`, while the environment variable takes precedence.
-
-## Build from source
-
-### Required
-
-- Golang >= 1.21.4
-- NodeJs ~= latest(recommend LTS)version
-- pnpm ~= latest
-
-### Build
-
-1. Get source code
-
-```shell
-git clone https://github.com/lantongxue/rustdesk-api-server-pro.git
-```
-
-2. Build the API Server for Linux amd64 as a static executable
-
-```shell
-cd backend
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w"
-```
-
-Disabling CGO prevents the Linux executable from depending on the glibc version installed on the build machine.
+- **Restricted single-device deletion**
+  - Only disabled, offline devices can be deleted, after entering the complete RustDesk ID for confirmation.
+  - Remove the device, credential and managed address-book associations transactionally. Retain audit history and pre-existing personal entries; only entries created by management are deleted.
 
-3. Build the frontend
-   
-```shell
-cd soybean-admin && pnpm i && pnpm build
-```
-
-### Local package and deployment
-
-After installing Go, Node.js, pnpm, and the frontend dependencies, run this from the repository root:
-
-```shell
-make build
-```
-
-`make build` builds the backend with CGO disabled. The resulting Linux executable is statically linked and can run on older distributions without errors such as `GLIBC_2.32 not found`.
-
-The output layout is:
-
-```text
-build/
-├── rustdesk-api-server-pro
-├── server.yaml
-└── dist/
-```
-
-On Linux, verify the executable before deployment:
-
-```shell
-file build/rustdesk-api-server-pro
-ldd build/rustdesk-api-server-pro
-```
-
-`file` should report `statically linked`, and `ldd` should report `not a dynamic executable`.
-
-`server.yaml` uses the relative static directory `./dist`. When launched from `build`, the API Server can serve the frontend directly. For routine production deployment, Caddy or Nginx should serve `dist` and reverse proxy `/api` and `/admin` to the API Server listening only on localhost.
-
-Caddy example (replace the hostname):
-
-```caddyfile
-api.example.com {
-    encode zstd gzip
-
-    @backend path /api /api/* /admin /admin/*
-    reverse_proxy @backend 127.0.0.1:12345
-
-    root * /opt/rustdesk-api-server-pro/dist
-    try_files {path} /index.html
-    file_server
-}
-```
-
-Captcha, login, and all management endpoints use `/admin/*`; device endpoints use `/api/*`. If the page reports `the backend request error`, first confirm that the new API Server is listening on `127.0.0.1:12345`, then verify that both path families are proxied instead of falling back to `index.html`.
-
-```shell
-cd build
-export RUD_API_SIGN_KEY='<stable-random-string-with-at-least-32-characters>'
-./rustdesk-api-server-pro sync
-./rustdesk-api-server-pro user add admin 'administrator-password' --admin
-./rustdesk-api-server-pro start
-```
-
-### Run
-
-#### api-server
-
-Assuming the compiled binary file is called `rustdesk-api-server-pro.exe`.
-
-1. Synchronize the database table structure
-   
-```shell
-rustdesk-api-server-pro.exe sync
-```
-
-2. Add your first user
-   
-```shell
-rustdesk-api-server-pro.exe user add admin yourpassword --admin
-```
-
-> --admin is optional, when enabled the added user is an administrator user, otherwise it is a regular user
-
-3. Start the server
-   
-```shell
-rustdesk-api-server-pro.exe start
-```
-
-> Listening on port `8080` by default
-
-#### Web Management Interface
-
-For this step you need a web server software (e.g. nginx, apache, etc.), by copying the packaged product to the web root directory.
-
-Typically, the packaged product is in the `soybean-admin/dist` directory.
-
-Reverse Proxy Configuration, you need to configure reverse proxy in `nginx` or other WEB servers, through the reverse proxy server can access the interface address correctly.
-
-Here's my backend reverse proxy configuration for you to refer to:
-
-```nginx
-#PROXY-START /api for rustdesk client
-location ^~ /api
-{
-    proxy_pass http://127.0.0.1:8080;
-    proxy_set_header Host 127.0.0.1;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header REMOTE-HOST $remote_addr;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $connection_upgrade;
-    proxy_http_version 1.1;
-    # proxy_hide_header Upgrade;
-
-    add_header X-Cache $upstream_cache_status;
-}
-#PROXY-END/
-
-#PROXY-START /admin for web-ui
-location ^~ /admin
-{
-    proxy_pass http://127.0.0.1:8080/admin;
-    proxy_set_header Host 127.0.0.1;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header REMOTE-HOST $remote_addr;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $connection_upgrade;
-    proxy_http_version 1.1;
-    # proxy_hide_header Upgrade;
-
-    add_header X-Cache $upstream_cache_status;
-}
-#PROXY-END/
-```
-
-## CLI help
-
-```shell
-Usage:
-  rustdesk-api-server-pro [command]
-
-Available Commands:
-  completion  Generate the autocompletion script for the specified shell
-  help        Help about any command
-  rustdesk    About rustdesk-server command
-  start       Start the api-server
-  sync        The api-server database synchronization
-  user        User management
-
-Flags:
-  -h, --help   help for rustdesk-api-server-pro
-
-Use "rustdesk-api-server-pro [command] --help" for more information about a command.
-```
-
-## Follow-up plan
-
-We will continue to follow up the RustDesk client and implement the corresponding interfaces, which will be a long-term plan.
-
-## Sponsorship
-
-If you found this project helpful, why not buy the developers a cup of coffee :)
-
-![Sponsorship](./soybean-admin/src/assets/imgs/sponsorships.png "Sponsorship")
-
-**Thank you for your sponsorship**
-
-## License
-
-> You can view the full license [here](https://github.com/lantongxue/rustdesk-api-server-pro/blob/master/LICENSE)
-
-This project is under the terms of the **MIT** license.
+- **Build and local validation**
+  - Package a static Linux amd64 API server with the Web frontend, avoiding a dependency on the build machine's glibc version.
+  - Add tests for device lifecycle, alias publishing, permission reporting, transaction rollback and concurrent consistency.
+  - Add mocked-API browser tests. Real full-stack Playwright integration remains optional, not a normal packaging dependency.
+  - Serialize local SQLite transactions through its connection pool to reduce concurrent write-lock conflicts.
+
+## Scope and limitations
+
+- Automatic enrollment, unattended mode and storage policies require the accompanying managed Android client; these are not promised as stock-client capabilities.
+- Aliases are not Custom IDs and do not modify hbbs or provide direct alias dialing. The address-book alias feature does not require rebuilding the connecting official client; actual login, refresh and connection still require deployment-level acceptance testing.
+- The API Server is a fixed control channel and is not changed by server-profile policy.
+- Disabling limits management API access, not necessarily existing remote sessions. Deletion is not a permanent ban; a client may enroll again.
+- Historical-data migration is not provided during development. Never commit private addresses, keys, passwords or configuration files to a public repository.
+
+See the [device-management TODO](docs/device-management-todo.md) and [implementation record](docs/device-management-progress.md) for details.
+
+See the repository [LICENSE](LICENSE) for license terms.
