@@ -5,6 +5,7 @@ import {
   createDeviceGroup,
   createServerProfile,
   deleteDeviceGroup,
+  deleteDeviceRecord,
   deleteServerProfile,
   fetchDeviceGroups,
   fetchDeviceAlias,
@@ -37,6 +38,28 @@ const previewVisible = ref(false);
 const preview = ref<Api.Devices.ServerProfilePreview | null>(null);
 const currentApiServer = window.location.origin;
 const aliasVisible = ref(false);
+const deleteVisible = ref(false);
+const deleteSaving = ref(false);
+const deleteForm = reactive({ id: 0, rustdesk_id: '', confirmation: '' });
+
+function confirmDelete(row: Api.Devices.Device) {
+  Object.assign(deleteForm, { id: row.id!, rustdesk_id: row.rustdesk_id, confirmation: '' });
+  deleteVisible.value = true;
+}
+
+async function removeDevice() {
+  if (deleteForm.confirmation !== deleteForm.rustdesk_id) return;
+  deleteSaving.value = true;
+  try {
+    const { error } = await deleteDeviceRecord(deleteForm.id, deleteForm.confirmation);
+    if (error) return;
+    deleteVisible.value = false;
+    window.$message?.success('设备管理记录已删除');
+    await refreshDeviceList();
+  } finally {
+    deleteSaving.value = false;
+  }
+}
 const aliasSaving = ref(false);
 const aliasForm = reactive({ id: 0, rustdesk_id: '', alias: '', address_book_ids: [] as number[] });
 const aliasTargets = ref<Api.Devices.DeviceAlias['targets']>([]);
@@ -297,6 +320,7 @@ const {
         <NTag type={row.disabled ? 'warning' : 'success'}>{row.disabled ? '已停用' : '正常'}</NTag>
         <span>{row.is_online ? '在线' : '离线'}</span>
         <NButton size="small" onClick={() => toggleDevice(row)}>{row.disabled ? '重新启用' : '停用'}</NButton>
+        {row.disabled ? <NButton size="small" type="error" disabled={row.is_online} onClick={() => confirmDelete(row)}>删除记录</NButton> : null}
       </NFlex>
     ) },
     {
@@ -509,6 +533,19 @@ onMounted(loadStrategy);
           <NButton type="primary" @click="saveUnattended">保存并发布</NButton>
         </NFlex>
       </template>
+    </NModal>
+
+    <NModal v-model:show="deleteVisible" preset="card" title="删除设备管理记录" class="max-w-95vw w-600px" :mask-closable="!deleteSaving" :closable="!deleteSaving">
+      <NAlert type="warning" :show-icon="false">
+        删除不可通过此页面恢复，只清理管理记录及凭据，不是永久封禁；客户端以后可能重新注册。
+        本功能创建的地址簿条目会移除，原有个人条目解除管理并保留，客户端本地缓存不会立即清除。
+      </NAlert>
+      <p class="my-4">请输入 RustDesk ID：{{ deleteForm.rustdesk_id }}</p>
+      <NInput v-model:value="deleteForm.confirmation" placeholder="输入完整 RustDesk ID 确认" :disabled="deleteSaving" />
+      <template #footer><NSpace justify="end">
+        <NButton :disabled="deleteSaving" @click="deleteVisible = false">取消</NButton>
+        <NButton type="error" :loading="deleteSaving" :disabled="deleteForm.confirmation !== deleteForm.rustdesk_id" @click="removeDevice">确认删除</NButton>
+      </NSpace></template>
     </NModal>
 
     <NModal v-model:show="aliasVisible" preset="card" title="编辑设备别名" class="max-w-95vw w-600px" :mask-closable="!aliasSaving" :closable="!aliasSaving">

@@ -1,5 +1,9 @@
 import { request } from '../request';
 
+export function deleteDeviceRecord(id: number, rustdesk_id: string) {
+  return request({ url: '/devices/record', method: 'delete', data: { id, rustdesk_id } });
+}
+
 export function fetchDeviceAlias(id: number) {
   return request<Api.Devices.DeviceAlias>({ url: '/devices/alias', params: { id } });
 }

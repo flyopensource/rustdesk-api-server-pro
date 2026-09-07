@@ -22,6 +22,7 @@ func (c *DevicesController) BeforeActivation(b mvc.BeforeActivation) {
 	b.Handle("PUT", "/devices/enabled", "HandleDeviceEnabled")
 	b.Handle("GET", "/devices/alias", "HandleAliasTargets")
 	b.Handle("PUT", "/devices/alias", "HandleDeviceAlias")
+	b.Handle("DELETE", "/devices/record", "HandleDeviceDelete")
 	b.Handle("PUT", "/devices/unattended", "HandleUnattended")
 	registerPolicyRoutes(b)
 }
