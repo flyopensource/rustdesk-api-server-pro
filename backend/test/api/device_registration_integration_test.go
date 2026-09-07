@@ -48,12 +48,17 @@ func TestDeviceRegistrationAndSignedHeartbeat(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer engine.Close()
-	if err = engine.Sync(new(model.Device), new(model.DeviceCredential)); err != nil {
+	if err = engine.Sync(
+		new(model.Device), new(model.DeviceCredential), new(model.DeviceGroup), new(model.DeviceGroupMember),
+		new(model.ServerProfile), new(model.ServerProfileAssignment), new(model.StrategyState),
+	); err != nil {
 		t.Fatal(err)
 	}
 	enrollmentKey := []byte("01234567890123456789012345678901")
 	serverConfig := config.GetDefaultServerConfig()
 	serverConfig.DeviceEnrollmentKey = base64.StdEncoding.EncodeToString(enrollmentKey)
+	serverConfig.ProvisioningSignSeed = base64.StdEncoding.EncodeToString(make([]byte, ed25519.SeedSize))
+	serverConfig.ProvisioningSecretKey = base64.StdEncoding.EncodeToString(make([]byte, 32))
 	application := iris.New()
 	application.RegisterDependency(engine, serverConfig)
 	appserver.SetRoute(application)

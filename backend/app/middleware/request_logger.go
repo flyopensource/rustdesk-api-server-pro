@@ -18,7 +18,7 @@ func RequestLogger() iris.Handler {
 				}
 				fmt.Println(header+":", value)
 			}
-			if context.Path() != "/admin/auth/login" && context.Path() != "/admin/devices/profile" && context.Path() != "/admin/devices/policy" {
+			if context.Path() != "/admin/auth/login" && context.Path() != "/admin/devices/profile" && context.Path() != "/admin/devices/policy" && context.Path() != "/admin/devices/server-profiles" {
 				body, _ := context.GetBody()
 				fmt.Println(string(body))
 			}

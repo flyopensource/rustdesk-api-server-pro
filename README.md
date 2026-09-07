@@ -29,33 +29,36 @@ CDN acceleration and security protection for his project are sponsored by Tencen
   - Statistics panel
   - User Management
   - Device group and membership management
-  - Global, group, and per-device policy editing
-  - Effective policy preview
+  - Multiple RustDesk Server profiles with global, group, and per-device quick switching
+  - Effective device configuration preview
   - 2FA & Email Verify Code
   - Session Management
   - Log Audit
 - Automatic Android unattended-device enrollment without a prior user login
 - Device-signed heartbeat/sysinfo requests and encrypted policy delivery
-- Remote policy control for unattended mode, recording prompts, accessibility prompts, and server profiles
-- Deterministic policy layering in global, group, then per-device order
+- Per-device unattended settings and remote server-profile switching
+- Deterministic whole-profile selection in device, group, then global order
 - Lightweight & Cross Platform
   - Minimal sqlite
   - Support for major operating systems and architectures
 
-## Android unattended enrollment and layered policy
+## Android unattended enrollment and server-profile policy
 
 On first launch, a provisioned Android client downloads an encrypted `rud.cfg` from the fixed URL injected at build time. It obtains the initial API Server address and enrolls automatically. After enrollment, the device uses its own signing credential for heartbeat, sysinfo, and policy requests, without a user access token. This supports unattended Android boards.
 
 The Web management device page supports:
 
-- creating device groups, editing priority and enabled state, and maintaining group membership;
-- editing global, device-group, and per-device policies;
-- controlling unattended mode, Root command discovery (`su`/`testsu`), recording prompts, accessibility prompts, and the RustDesk Server Profile;
-- previewing the final effective policy and its contributing layers for a device;
-- increasing affected device revisions and delivering the complete merged policy through heartbeat;
-- reporting only whether Server Key and permanent password are configured, without returning their plaintext through management or preview APIs.
+- maintaining multiple complete server profiles, each containing ID Server, Relay Server, Server Key, and permanent password;
+- quickly selecting a whole profile at global, device-group, or per-device scope;
+- creating device groups and maintaining membership, with at most one group per device;
+- enabling unattended access per device and entering a Root executor manually; `auto` probes `su` and `testsu`, while another single executable name or absolute path can also be used;
+- previewing the effective server profile, source, and unattended setting for a device;
+- increasing the global strategy revision and delivering a complete policy to devices that need an update;
+- encrypting permanent passwords at rest and returning only their configured state through management and preview APIs.
 
-Policies are merged deterministically in global, group, then per-device order; later non-null fields override earlier layers. When a device belongs to multiple groups, group priority and group ID determine their order. Existing per-device settings are materialized as the highest-priority device override so enabling layered policy does not unexpectedly change deployed devices.
+Server-profile fields are not merged. A device selects exactly one complete profile in this order: its direct assignment, its enabled group, then the global default. An unassigned scope inherits from the next scope; an assignment to a disabled profile also falls back. Unattended access is not inherited from global or group scope and is stored only on each device.
+
+The API Server is the fixed control channel. It is not part of a server-profile template and cannot be changed by policy. The management page displays the current site origin; Android clients use the `provisioning_api_server` from the encrypted `rud.cfg` downloaded through their build-time fixed URL. Switching profiles changes only ID Server, Relay Server, Server Key, and permanent password.
 
 > **Public repository security:** Never commit the real `rud.cfg` URL, SecretBox key, initial device-enrollment key, signing private key, Server Key, or permanent password to source code, README files, build logs, or Git history. Inject client build values with GitHub Actions Secrets/Variables and server keys with deployment secrets. The built APK necessarily contains the fixed bootstrap URL and initial client credential, so treat the APK itself as a deployment credential.
 
@@ -203,7 +206,7 @@ services:
 | RUD_CFG_SECRETBOX_KEY_B64 | - | Base64-encoded 32-byte SecretBox key used to encrypt policies |
 | RUD_CFG_KEY_ID | android-v1 | Policy key-version identifier; this is not a secret key |
 
-Run `rustdesk-api-server-pro sync` after upgrading to create the `device_credential` table. Provisioned Android clients register through `POST /api/device/register`, then use device-signed `/api/device/heartbeat` and `/api/device/sysinfo`; no user access token is required. Keep `RUD_DEVICE_ENROLLMENT_KEY_B64` equal to the value injected into the corresponding APK and provide it through the deployment secret store rather than committing it. A disabled device credential cannot reactivate itself with the shared enrollment key.
+Run `rustdesk-api-server-pro sync` after upgrading to create or update the device-credential and `strategy_*` tables. The new policy implementation does not migrate old device-group or policy records; recreate server profiles, groups, and scope assignments in the management UI. Users, devices, device credentials, audit records, and other non-policy data remain intact. Provisioned Android clients register through `POST /api/device/register`, then use device-signed `/api/device/heartbeat` and `/api/device/sysinfo`; no user access token is required. Keep `RUD_DEVICE_ENROLLMENT_KEY_B64` equal to the value injected into the corresponding APK and provide it through the deployment secret store rather than committing it. A disabled device credential cannot reactivate itself with the shared enrollment key.
 
 The API Server validates its token signing key during startup. Prefer setting `RUD_API_SIGN_KEY` only through the deployment secret store; the server refuses to start when the key is missing or shorter than 32 characters. Existing private deployments may continue using `signKey` in `server.yaml`, while the environment variable takes precedence.
 
@@ -267,6 +270,23 @@ ldd build/rustdesk-api-server-pro
 `file` should report `statically linked`, and `ldd` should report `not a dynamic executable`.
 
 `server.yaml` uses the relative static directory `./dist`. When launched from `build`, the API Server can serve the frontend directly. For routine production deployment, Caddy or Nginx should serve `dist` and reverse proxy `/api` and `/admin` to the API Server listening only on localhost.
+
+Caddy example (replace the hostname):
+
+```caddyfile
+api.example.com {
+    encode zstd gzip
+
+    @backend path /api /api/* /admin /admin/*
+    reverse_proxy @backend 127.0.0.1:12345
+
+    root * /opt/rustdesk-api-server-pro/dist
+    try_files {path} /index.html
+    file_server
+}
+```
+
+Captcha, login, and all management endpoints use `/admin/*`; device endpoints use `/api/*`. If the page reports `the backend request error`, first confirm that the new API Server is listening on `127.0.0.1:12345`, then verify that both path families are proxied instead of falling back to `index.html`.
 
 ```shell
 cd build

@@ -1,98 +1,136 @@
 package policy
 
 import (
-	"encoding/json"
-	"fmt"
+	"errors"
 	"rustdesk-api-server-pro/app/model"
-	"sort"
+	"time"
 
 	"xorm.io/xorm"
 )
 
-type Resolution struct {
-	Effective Effective `json:"effective"`
-	Layers    []string  `json:"layers"`
+func CurrentRevision(db *xorm.Engine) (int64, error) {
+	state := model.StrategyState{Id: 1}
+	has, err := db.ID(state.Id).Get(&state)
+	if err != nil {
+		return 0, err
+	}
+	if has {
+		return state.Revision, nil
+	}
+	state.Revision = time.Now().UnixMilli()
+	if _, err = db.Insert(&state); err != nil {
+		if has, loadErr := db.ID(state.Id).Get(&state); loadErr == nil && has {
+			return state.Revision, nil
+		}
+		return 0, err
+	}
+	return state.Revision, nil
 }
 
-func ResolveForDevice(db *xorm.Engine, device *model.Device) (Resolution, error) {
-	policies := make([]model.ManagedDevicePolicy, 0)
-	if err := db.Where("enabled = ?", true).Find(&policies); err != nil {
-		return Resolution{}, err
+func NextRevision(session *xorm.Session) (int64, error) {
+	state := model.StrategyState{Id: 1}
+	has, err := session.ID(state.Id).Get(&state)
+	if err != nil {
+		return 0, err
 	}
-	byScope := make(map[string]model.ManagedDevicePolicy)
-	for _, item := range policies {
-		byScope[fmt.Sprintf("%s:%d", item.ScopeType, item.ScopeId)] = item
+	next := time.Now().UnixMilli()
+	if has && next <= state.Revision {
+		next = state.Revision + 1
 	}
-	var global *Document
-	layers := make([]string, 0, 3)
-	if item, ok := byScope[fmt.Sprintf("%s:0", model.DevicePolicyScopeGlobal)]; ok {
-		document, err := decodeDocument(item.Document)
-		if err != nil {
-			return Resolution{}, err
-		}
-		global = &document
-		layers = append(layers, "global")
+	state.Revision = next
+	if has {
+		_, err = session.ID(state.Id).Cols("revision").Update(&state)
+	} else {
+		_, err = session.Insert(&state)
 	}
-	type membership struct {
-		GroupId  int `xorm:"group_id"`
-		Priority int `xorm:"priority"`
-	}
-	memberships := make([]membership, 0)
-	if err := db.Table(new(model.DeviceGroupMember)).Alias("m").
-		Join("INNER", []string{new(model.DeviceGroup).TableName(), "g"}, "g.id = m.group_id AND g.enabled = 1").
-		Where("m.device_id = ?", device.Id).Cols("m.group_id", "g.priority").Find(&memberships); err != nil {
-		return Resolution{}, err
-	}
-	groups := make([]GroupDocument, 0, len(memberships))
-	for _, member := range memberships {
-		if item, ok := byScope[fmt.Sprintf("%s:%d", model.DevicePolicyScopeGroup, member.GroupId)]; ok {
-			document, err := decodeDocument(item.Document)
-			if err != nil {
-				return Resolution{}, err
-			}
-			groups = append(groups, GroupDocument{GroupID: member.GroupId, Priority: member.Priority, Document: document})
-		}
-	}
-	sort.Slice(groups, func(i, j int) bool {
-		if groups[i].Priority == groups[j].Priority {
-			return groups[i].GroupID < groups[j].GroupID
-		}
-		return groups[i].Priority < groups[j].Priority
-	})
-	var deviceDocument *Document
-	if item, ok := byScope[fmt.Sprintf("%s:%d", model.DevicePolicyScopeDevice, device.Id)]; ok {
-		document, err := decodeDocument(item.Document)
-		if err != nil {
-			return Resolution{}, err
-		}
-		deviceDocument = &document
-	}
-	if global == nil && len(groups) == 0 && deviceDocument == nil {
-		return Resolution{Effective: LegacyEffective(device), Layers: []string{"legacy-device"}}, nil
-	}
-	for _, group := range groups {
-		layers = append(layers, fmt.Sprintf("group:%d", group.GroupID))
-	}
-	if deviceDocument != nil {
-		layers = append(layers, "device")
-	}
-	effective, err := Resolve(global, groups, deviceDocument)
-	return Resolution{Effective: effective, Layers: layers}, err
+	return next, err
 }
 
-func LegacyEffective(device *model.Device) Effective {
-	return Effective{
-		UnattendedEnabled: device.UnattendedEnabled, RootCommand: device.RootCommand,
-		ProfileEnabled: device.ProfileEnabled, IDServer: device.ProfileIdServer,
-		RelayServer: device.ProfileRelayServer, APIServer: device.ProfileApiServer,
-		Key: device.ProfileKey, PermanentPassword: device.ProfilePassword,
+func ResolveForDevice(db *xorm.Engine, device *model.Device) (Effective, error) {
+	revision, err := CurrentRevision(db)
+	if err != nil {
+		return Effective{}, err
 	}
+	rootCommand := device.RootCommand
+	if rootCommand == "" {
+		rootCommand = "auto"
+	}
+	effective := Effective{
+		Revision:          revision,
+		UnattendedEnabled: device.UnattendedEnabled,
+		RootCommand:       rootCommand,
+	}
+	candidates := []struct {
+		scope  string
+		id     int
+		source string
+	}{{model.StrategyScopeDevice, device.Id, "device"}}
+	membership := model.DeviceGroupMember{}
+	hasMembership, err := db.Where("device_id = ?", device.Id).Get(&membership)
+	if err != nil {
+		return Effective{}, err
+	}
+	if hasMembership {
+		group := model.DeviceGroup{}
+		if has, loadErr := db.ID(membership.GroupId).Where("enabled = ?", true).Get(&group); loadErr != nil {
+			return Effective{}, loadErr
+		} else if has {
+			candidates = append(candidates, struct {
+				scope  string
+				id     int
+				source string
+			}{model.StrategyScopeGroup, group.Id, "group:" + group.Name})
+		}
+	}
+	candidates = append(candidates, struct {
+		scope  string
+		id     int
+		source string
+	}{model.StrategyScopeGlobal, 0, "global"})
+	for _, candidate := range candidates {
+		assignment := model.ServerProfileAssignment{}
+		has, loadErr := db.Where("scope_type = ? AND scope_id = ?", candidate.scope, candidate.id).Get(&assignment)
+		if loadErr != nil {
+			return Effective{}, loadErr
+		}
+		if !has {
+			continue
+		}
+		profile := model.ServerProfile{}
+		has, loadErr = db.ID(assignment.ProfileId).Where("enabled = ?", true).Get(&profile)
+		if loadErr != nil {
+			return Effective{}, loadErr
+		}
+		if !has {
+			continue
+		}
+		effective.ProfileEnabled = true
+		effective.ProfileSource = candidate.source
+		effective.Profile = ServerProfile{
+			ID: profile.Id, Name: profile.Name, IDServer: profile.IdServer,
+			RelayServer: profile.RelayServer, ServerKey: profile.ServerKey,
+			PasswordCiphertext: profile.PasswordCiphertext,
+		}
+		return effective, nil
+	}
+	return effective, nil
 }
 
-func decodeDocument(value string) (Document, error) {
-	var document Document
-	if err := json.Unmarshal([]byte(value), &document); err != nil {
-		return Document{}, err
+func AssignmentProfileID(db *xorm.Engine, scope string, id int) (int, error) {
+	assignment := model.ServerProfileAssignment{}
+	has, err := db.Where("scope_type = ? AND scope_id = ?", scope, id).Get(&assignment)
+	if err != nil || !has {
+		return 0, err
 	}
-	return document, nil
+	return assignment.ProfileId, nil
+}
+
+func ValidateScope(scope string, id int) error {
+	if scope == model.StrategyScopeGlobal && id == 0 {
+		return nil
+	}
+	if id > 0 && (scope == model.StrategyScopeGroup || scope == model.StrategyScopeDevice) {
+		return nil
+	}
+	return errors.New("invalid strategy scope")
 }

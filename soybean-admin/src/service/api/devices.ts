@@ -8,27 +8,15 @@ export function updateDeviceUnattended(data: { id: number; enabled: boolean; roo
   return request<{ policy_revision: number }>({ url: '/devices/unattended', method: 'put', data });
 }
 
-export function updateDeviceProfile(data: {
-  id: number;
-  enabled: boolean;
-  id_server: string;
-  relay_server: string;
-  api_server: string;
-  key?: string;
-  permanent_password?: string;
-}) {
-  return request<{ policy_revision: number }>({ url: '/devices/profile', method: 'put', data });
-}
-
 export function fetchDeviceGroups() {
   return request<Api.Devices.DeviceGroup[]>({ url: '/devices/groups' });
 }
 
-export function createDeviceGroup(data: Omit<Api.Devices.DeviceGroup, 'id' | 'member_count' | 'device_ids'>) {
+export function createDeviceGroup(data: Pick<Api.Devices.DeviceGroup, 'name' | 'enabled'>) {
   return request<{ id: number }>({ url: '/devices/groups', method: 'post', data });
 }
 
-export function updateDeviceGroup(data: Pick<Api.Devices.DeviceGroup, 'id' | 'name' | 'priority' | 'enabled'>) {
+export function updateDeviceGroup(data: Pick<Api.Devices.DeviceGroup, 'id' | 'name' | 'enabled'>) {
   return request({ url: '/devices/groups', method: 'put', data });
 }
 
@@ -40,18 +28,34 @@ export function updateDeviceGroupMembers(group_id: number, device_ids: number[])
   return request({ url: '/devices/groups/members', method: 'put', data: { group_id, device_ids } });
 }
 
-export function fetchManagedDevicePolicy(scope_type: Api.Devices.PolicyScope, scope_id: number) {
-  return request<Api.Devices.ManagedPolicy | null>({ url: '/devices/policy', params: { scope_type, scope_id } });
+export function fetchServerProfiles() {
+  return request<Api.Devices.ServerProfilesResult>({ url: '/devices/server-profiles' });
 }
 
-export function updateManagedDevicePolicy(data: Api.Devices.ManagedPolicyInput) {
-  return request<{ revision: number }>({ url: '/devices/policy', method: 'put', data });
+export function createServerProfile(data: Api.Devices.ServerProfileInput) {
+  return request<Api.Devices.ServerProfile>({ url: '/devices/server-profiles', method: 'post', data });
 }
 
-export function deleteManagedDevicePolicy(scope_type: Api.Devices.PolicyScope, scope_id: number) {
-  return request({ url: '/devices/policy', method: 'delete', params: { scope_type, scope_id } });
+export function updateServerProfile(data: Api.Devices.ServerProfileInput & { id: number }) {
+  return request<Api.Devices.ServerProfile>({ url: '/devices/server-profiles', method: 'put', data });
 }
 
-export function fetchEffectiveDevicePolicy(device_id: number) {
-  return request<Api.Devices.PolicyPreview>({ url: '/devices/policy/preview', params: { device_id } });
+export function deleteServerProfile(id: number) {
+  return request({ url: '/devices/server-profiles', method: 'delete', params: { id } });
+}
+
+export function updateServerProfileAssignment(
+  scope_type: Api.Devices.StrategyScope,
+  scope_id: number,
+  profile_id: number
+) {
+  return request<{ revision: number }>({
+    url: '/devices/server-profile-assignment',
+    method: 'put',
+    data: { scope_type, scope_id, profile_id }
+  });
+}
+
+export function fetchServerProfilePreview(device_id: number) {
+  return request<Api.Devices.ServerProfilePreview>({ url: '/devices/server-profile-preview', params: { device_id } });
 }

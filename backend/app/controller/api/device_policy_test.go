@@ -25,8 +25,15 @@ func TestBuildPolicyEnvelopeUsesResolvedPolicy(t *testing.T) {
 	cfg.ProvisioningSignSeed = base64.StdEncoding.EncodeToString(seed)
 	cfg.ProvisioningSecretKey = base64.StdEncoding.EncodeToString(secret[:])
 	cfg.ProvisioningKeyId = "test"
-	device := model.Device{RustdeskId: "123", Uuid: "uuid", PolicyRevision: 42, UnattendedEnabled: false}
-	effective := devicepolicy.Effective{UnattendedEnabled: true, RootCommand: "su", ProfileEnabled: true, IDServer: "group.example", Key: "secret"}
+	device := model.Device{RustdeskId: "123", Uuid: "uuid", UnattendedEnabled: false}
+	password, err := devicepolicy.EncryptPassword("private-password", cfg.ProvisioningSecretKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	effective := devicepolicy.Effective{
+		Revision: 42, UnattendedEnabled: true, RootCommand: "/system/xbin/su", ProfileEnabled: true,
+		Profile: devicepolicy.ServerProfile{IDServer: "group.example", ServerKey: "server-key", PasswordCiphertext: password},
+	}
 	encoded, err := buildPolicyEnvelope(&device, cfg, effective)
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +58,7 @@ func TestBuildPolicyEnvelopeUsesResolvedPolicy(t *testing.T) {
 	if err = json.Unmarshal(plaintext, &policy); err != nil {
 		t.Fatal(err)
 	}
-	if policy.Revision != 42 || !policy.Android.Unattended.Enabled || policy.Android.Unattended.RootCommand != "su" || policy.ServerProfile.IDServer != "group.example" || policy.ServerProfile.Key != "secret" {
+	if policy.Revision != 42 || !policy.Android.Unattended.Enabled || policy.Android.Unattended.RootCommand != "/system/xbin/su" || policy.ServerProfile.IDServer != "group.example" || policy.ServerProfile.Key != "server-key" || policy.ServerProfile.PermanentPassword != "private-password" {
 		t.Fatalf("envelope did not use resolved policy: %+v", policy)
 	}
 }

@@ -1,8 +1,8 @@
 package admin
 
 import (
-	"net/url"
 	"rustdesk-api-server-pro/app/model"
+	devicepolicy "rustdesk-api-server-pro/app/policy"
 	"rustdesk-api-server-pro/config"
 	"rustdesk-api-server-pro/db"
 	"strings"
@@ -14,82 +14,13 @@ import (
 
 type DevicesController struct {
 	basicController
+	Cfg *config.ServerConfig
 }
 
 func (c *DevicesController) BeforeActivation(b mvc.BeforeActivation) {
 	b.Handle("GET", "/devices/list", "HandleList")
 	b.Handle("PUT", "/devices/unattended", "HandleUnattended")
-	b.Handle("PUT", "/devices/profile", "HandleProfile")
 	registerPolicyRoutes(b)
-}
-
-func (c *DevicesController) HandleProfile() mvc.Result {
-	var form struct {
-		Id                int     `json:"id"`
-		Enabled           bool    `json:"enabled"`
-		IDServer          string  `json:"id_server"`
-		RelayServer       string  `json:"relay_server"`
-		APIServer         string  `json:"api_server"`
-		Key               *string `json:"key"`
-		PermanentPassword *string `json:"permanent_password"`
-	}
-	if err := c.Ctx.ReadJSON(&form); err != nil || form.Id <= 0 {
-		return c.Error(nil, "DataError")
-	}
-	form.IDServer = strings.TrimSpace(form.IDServer)
-	form.RelayServer = strings.TrimSpace(form.RelayServer)
-	form.APIServer = strings.TrimSpace(form.APIServer)
-	if len(form.IDServer) > 255 || len(form.RelayServer) > 255 || len(form.APIServer) > 255 ||
-		strings.ContainsAny(form.IDServer+form.RelayServer, "\r\n\t ") {
-		return c.Error(nil, "InvalidServerProfile")
-	}
-	if form.Key != nil && len(*form.Key) > 255 || form.PermanentPassword != nil && len(*form.PermanentPassword) > 255 {
-		return c.Error(nil, "InvalidServerProfile")
-	}
-	if form.APIServer != "" {
-		parsed, err := url.ParseRequestURI(form.APIServer)
-		if err != nil || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" || parsed.Scheme != "http" && parsed.Scheme != "https" {
-			return c.Error(nil, "InvalidAPIServer")
-		}
-	}
-	device := model.Device{}
-	has, err := c.Db.ID(form.Id).Get(&device)
-	if err != nil || !has {
-		return c.Error(nil, "DeviceNotFound")
-	}
-	if form.Enabled && form.IDServer == "" {
-		return c.Error(nil, "IDServerRequired")
-	}
-	device.PolicyRevision++
-	updates := map[string]interface{}{
-		"profile_enabled": form.Enabled, "profile_id_server": form.IDServer,
-		"profile_relay_server": form.RelayServer, "profile_api_server": form.APIServer,
-		"policy_revision": device.PolicyRevision,
-	}
-	if form.Key != nil {
-		updates["profile_key"] = *form.Key
-	}
-	if form.PermanentPassword != nil {
-		updates["profile_password"] = *form.PermanentPassword
-	}
-	_, err = c.Db.Table(new(model.Device)).ID(form.Id).Update(updates)
-	if err != nil {
-		return c.Error(nil, err.Error())
-	}
-	device.ProfileEnabled = form.Enabled
-	device.ProfileIdServer = form.IDServer
-	device.ProfileRelayServer = form.RelayServer
-	device.ProfileApiServer = form.APIServer
-	if form.Key != nil {
-		device.ProfileKey = *form.Key
-	}
-	if form.PermanentPassword != nil {
-		device.ProfilePassword = *form.PermanentPassword
-	}
-	if err = upsertDeviceSnapshot(c.Db, &device, true); err != nil {
-		return c.Error(nil, err.Error())
-	}
-	return c.Success(iris.Map{"policy_revision": device.PolicyRevision}, "ok")
 }
 
 func (c *DevicesController) HandleUnattended() mvc.Result {
@@ -101,10 +32,8 @@ func (c *DevicesController) HandleUnattended() mvc.Result {
 	if err := c.Ctx.ReadJSON(&form); err != nil || form.Id <= 0 {
 		return c.Error(nil, "DataError")
 	}
-	if form.RootCommand == "" {
-		form.RootCommand = "auto"
-	}
-	if form.RootCommand != "auto" && form.RootCommand != "su" && form.RootCommand != "testsu" && form.RootCommand != "disabled" {
+	form.RootCommand = strings.TrimSpace(form.RootCommand)
+	if !devicepolicy.ValidRootCommand(form.RootCommand) {
 		return c.Error(nil, "InvalidRootCommand")
 	}
 	device := model.Device{}
@@ -112,21 +41,27 @@ func (c *DevicesController) HandleUnattended() mvc.Result {
 	if err != nil || !has {
 		return c.Error(nil, "DeviceNotFound")
 	}
-	device.UnattendedEnabled = form.Enabled
-	device.RootCommand = form.RootCommand
-	device.PolicyRevision++
-	_, err = c.Db.Table(new(model.Device)).ID(form.Id).Update(map[string]interface{}{
+	session := c.Db.NewSession()
+	defer session.Close()
+	if err = session.Begin(); err != nil {
+		return c.Error(nil, err.Error())
+	}
+	if _, err = session.Table(new(model.Device)).ID(form.Id).Update(map[string]interface{}{
 		"unattended_enabled": form.Enabled,
 		"root_command":       form.RootCommand,
-		"policy_revision":    device.PolicyRevision,
-	})
+	}); err != nil {
+		session.Rollback()
+		return c.Error(nil, err.Error())
+	}
+	revision, err := devicepolicy.NextRevision(session)
 	if err != nil {
+		session.Rollback()
 		return c.Error(nil, err.Error())
 	}
-	if err = upsertDeviceSnapshot(c.Db, &device, true); err != nil {
+	if err = session.Commit(); err != nil {
 		return c.Error(nil, err.Error())
 	}
-	return c.Success(iris.Map{"policy_revision": device.PolicyRevision}, "ok")
+	return c.Success(iris.Map{"policy_revision": revision}, "ok")
 }
 
 func (c *DevicesController) HandleList() mvc.Result {
@@ -154,13 +89,32 @@ func (c *DevicesController) HandleList() mvc.Result {
 	pagination := db.NewPagination(currentPage, pageSize)
 	deviceList := make([]model.Device, 0)
 
-	err := pagination.Paginate(query, &model.Audit{}, &deviceList)
+	err := pagination.Paginate(query, &model.Device{}, &deviceList)
 	if err != nil {
 		return c.Error(nil, err.Error())
 	}
 
 	list := make([]iris.Map, 0)
 	for _, a := range deviceList {
+		effective, resolveErr := devicepolicy.ResolveForDevice(c.Db, &a)
+		if resolveErr != nil {
+			return c.Error(nil, resolveErr.Error())
+		}
+		directProfileId, resolveErr := devicepolicy.AssignmentProfileID(c.Db, model.StrategyScopeDevice, a.Id)
+		if resolveErr != nil {
+			return c.Error(nil, resolveErr.Error())
+		}
+		groupId, groupName := 0, ""
+		membership := model.DeviceGroupMember{}
+		if has, groupErr := c.Db.Where("device_id = ?", a.Id).Get(&membership); groupErr != nil {
+			return c.Error(nil, groupErr.Error())
+		} else if has {
+			group := model.DeviceGroup{}
+			if _, groupErr = c.Db.ID(membership.GroupId).Get(&group); groupErr != nil {
+				return c.Error(nil, groupErr.Error())
+			}
+			groupId, groupName = group.Id, group.Name
+		}
 		list = append(list, iris.Map{
 			"id":                       a.Id,
 			"rustdesk_id":              a.RustdeskId,
@@ -174,7 +128,7 @@ func (c *DevicesController) HandleList() mvc.Result {
 			"is_online":                a.IsOnline,
 			"unattended_enabled":       a.UnattendedEnabled,
 			"root_command":             a.RootCommand,
-			"policy_revision":          a.PolicyRevision,
+			"policy_revision":          effective.Revision,
 			"applied_revision":         a.AppliedRevision,
 			"unattended_status":        a.UnattendedStatus,
 			"root_executor":            a.RootExecutor,
@@ -184,12 +138,17 @@ func (c *DevicesController) HandleList() mvc.Result {
 			"service_running":          a.ServiceRunning,
 			"unattended_error":         a.UnattendedError,
 			"unattended_reported_at":   a.UnattendedReportedAt.Format(config.TimeFormat),
-			"profile_enabled":          a.ProfileEnabled,
-			"profile_id_server":        a.ProfileIdServer,
-			"profile_relay_server":     a.ProfileRelayServer,
-			"profile_api_server":       a.ProfileApiServer,
-			"profile_key_set":          a.ProfileKey != "",
-			"profile_password_set":     a.ProfilePassword != "",
+			"group_id":                 groupId,
+			"group_name":               groupName,
+			"profile_assignment_id":    directProfileId,
+			"profile_enabled":          effective.ProfileEnabled,
+			"profile_id":               effective.Profile.ID,
+			"profile_name":             effective.Profile.Name,
+			"profile_source":           effective.ProfileSource,
+			"profile_id_server":        effective.Profile.IDServer,
+			"profile_relay_server":     effective.Profile.RelayServer,
+			"profile_key_set":          effective.Profile.ServerKey != "",
+			"profile_password_set":     effective.Profile.PasswordCiphertext != "",
 			"profile_applied_revision": a.ProfileAppliedRevision,
 			"profile_active_source":    a.ProfileActiveSource,
 			"profile_connected":        a.ProfileConnected,

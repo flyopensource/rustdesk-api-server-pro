@@ -34,7 +34,6 @@ type unattendedPolicy struct {
 		Enabled           bool   `json:"enabled"`
 		IDServer          string `json:"id_server"`
 		RelayServer       string `json:"relay_server"`
-		APIServer         string `json:"api_server"`
 		Key               string `json:"key"`
 		PermanentPassword string `json:"permanent_password"`
 	} `json:"server_profile"`
@@ -59,17 +58,19 @@ func buildPolicyEnvelope(device *model.Device, cfg *config.ServerConfig, effecti
 		return "", errors.New("provisioning encryption key is not configured")
 	}
 	now := time.Now().Unix()
-	policy := unattendedPolicy{Version: 1, Revision: device.PolicyRevision, IssuedAt: now, ExpiresAt: now + 7*24*60*60}
+	policy := unattendedPolicy{Version: 1, Revision: effective.Revision, IssuedAt: now, ExpiresAt: now + 7*24*60*60}
 	policy.Target.RustdeskID = device.RustdeskId
 	policy.Target.UUID = device.Uuid
 	policy.Android.Unattended.Enabled = effective.UnattendedEnabled
 	policy.Android.Unattended.RootCommand = effective.RootCommand
 	policy.ServerProfile.Enabled = effective.ProfileEnabled
-	policy.ServerProfile.IDServer = effective.IDServer
-	policy.ServerProfile.RelayServer = effective.RelayServer
-	policy.ServerProfile.APIServer = effective.APIServer
-	policy.ServerProfile.Key = effective.Key
-	policy.ServerProfile.PermanentPassword = effective.PermanentPassword
+	policy.ServerProfile.IDServer = effective.Profile.IDServer
+	policy.ServerProfile.RelayServer = effective.Profile.RelayServer
+	policy.ServerProfile.Key = effective.Profile.ServerKey
+	policy.ServerProfile.PermanentPassword, err = devicepolicy.DecryptPassword(effective.Profile.PasswordCiphertext, cfg.ProvisioningSecretKey)
+	if err != nil {
+		return "", err
+	}
 	plaintext, err := json.Marshal(policy)
 	if err != nil {
 		return "", err

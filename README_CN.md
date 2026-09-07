@@ -16,33 +16,36 @@ Rustdesk Api Server Pro
     - 统计面板
     - 用户管理
     - 设备组与成员管理
-    - 全局、设备组、单设备三级策略编辑
-    - 设备有效策略预览
+    - 多套 RustDesk Server 配置与全局、设备组、单设备快捷切换
+    - 设备最终生效配置预览
     - 两步验证 & 邮件验证码
     - 会话管理
     - 日志审计
 - Android 无人值守设备自动注册，无需用户预先登录
 - 设备签名鉴权的 heartbeat/sysinfo 上报和加密策略下发
-- 无人值守、录屏提示、无障碍提示和服务器配置的远程策略控制
-- 分层策略按“全局 → 设备组 → 单设备”确定性合并，单设备配置优先级最高
+- 单设备无人值守配置和服务器配置远程切换
+- 服务器配置按“单设备 → 设备组 → 全局”确定性选择，单设备优先级最高
 - 轻量化&跨平台
     - 最小sqlite即可
     - 支持主流操作系统和架构
 
-## Android 无人值守和分层策略
+## Android 无人值守和服务器配置策略
 
 Provisioning Android 客户端首次启动后，从构建时注入的固定地址下载加密 `rud.cfg`，取得初始 API Server 地址并自动注册设备。注册成功后，设备使用自己的签名凭据访问 heartbeat、sysinfo 和策略接口，不依赖用户 Access Token，适用于无人值守主板。
 
 后台设备页面支持：
 
-- 创建设备组、编辑优先级和启用状态、维护设备组成员；
-- 编辑全局、设备组、单设备三级策略；
-- 控制无人值守模式、Root 命令自动探测（`su`/`testsu`）、录屏提示、无障碍提示及 RustDesk Server Profile；
-- 预览指定设备最终生效的策略和每一层来源；
-- 策略变更后提升受影响设备的 revision，由 heartbeat 下发完整的合并策略；
-- Server Key 和永久密码只显示“是否已配置”，不会通过管理查询或预览接口返回明文。
+- 维护多套完整的服务器配置，每套包含 ID Server、Relay Server、Server Key 和永久密码；
+- 在全局、设备组或单设备范围快捷选择整套配置；
+- 创建设备组并维护成员；一台设备最多属于一个设备组；
+- 在单设备上手动开启无人值守并填写 Root 执行器；`auto` 会探测 `su`/`testsu`，也可填写其他单个可执行文件名称或绝对路径；
+- 预览指定设备最终生效的服务器配置、来源及无人值守设置；
+- 变更后提升全局策略 revision，由 heartbeat 给需要更新的设备下发完整策略；
+- 永久密码加密存储，管理查询和预览接口只返回“是否已配置”，不返回明文。
 
-策略合并顺序固定为全局策略、设备组策略、单设备策略；后面的非空字段覆盖前一层。设备属于多个组时，按组优先级和组 ID 确定顺序。为避免升级后改变现有设备行为，已有的单设备配置会固化为最高优先级的设备覆盖。
+服务器配置不是逐字段合并。每台设备只会选中一套完整配置，选择顺序固定为：单设备直接选择、所属且已启用的设备组、全局默认。范围未选择配置时才继续向上继承；被选择的配置已停用时也会继续回退。无人值守不参与全局或设备组继承，只保存在单设备上。
+
+API Server 属于固定控制通道，不包含在服务器配置模板中，也不能通过策略修改。管理页面显示当前站点地址；Android 客户端实际使用构建时固定地址下载的加密 `rud.cfg` 中的 `provisioning_api_server`。切换服务器配置只改变 ID Server、Relay Server、Server Key 和永久密码。
 
 > **公共仓库安全要求：** 不要把真实 `rud.cfg` 下载地址、SecretBox 密钥、设备初始注册密钥、签名私钥、Server Key 或永久密码写入源码、README、构建日志或 Git 历史。客户端构建值必须使用 GitHub Actions Secrets/Variables 注入；服务端密钥必须使用部署环境的 Secret 注入。构建后的 APK 必然包含客户端启动所需的固定地址和初始密钥，因此 APK 本身也应按部署凭据管理。
 
@@ -183,7 +186,7 @@ services:
 |RUD_CFG_SECRETBOX_KEY_B64|-|策略加密使用的 32 字节 Base64 SecretBox 密钥|
 |RUD_CFG_KEY_ID|android-v1|策略密钥版本标识，不是密钥本身|
 
-升级后先运行 `rustdesk-api-server-pro sync` 创建 `device_credential` 表。Provisioning Android 客户端通过 `POST /api/device/register` 自动注册，之后使用设备签名访问 `/api/device/heartbeat` 和 `/api/device/sysinfo`，不需要用户 Access Token。服务端的 `RUD_DEVICE_ENROLLMENT_KEY_B64` 必须与对应 APK 注入值一致，并应由部署环境的 Secret 管理，不得提交真实值。服务端禁用设备凭据后，该设备不能使用共享初始注册密钥自行恢复。
+升级后先运行 `rustdesk-api-server-pro sync` 创建或更新设备凭据和 `strategy_*` 策略表。新的策略实现不会迁移旧设备组或旧策略数据，需要在管理后台重新创建服务器配置、设备组和范围选择；用户、设备、设备凭据和审计等非策略数据保留。Provisioning Android 客户端通过 `POST /api/device/register` 自动注册，之后使用设备签名访问 `/api/device/heartbeat` 和 `/api/device/sysinfo`，不需要用户 Access Token。服务端的 `RUD_DEVICE_ENROLLMENT_KEY_B64` 必须与对应 APK 注入值一致，并应由部署环境的 Secret 管理，不得提交真实值。服务端禁用设备凭据后，该设备不能使用共享初始注册密钥自行恢复。
 
 API Server 启动时会校验 Token 签名密钥。推荐只通过部署 Secret 设置 `RUD_API_SIGN_KEY`；未配置或长度不足 32 位时服务拒绝启动。已有私有部署仍可使用 `server.yaml` 的 `signKey`，环境变量优先级更高。
 
@@ -243,6 +246,23 @@ ldd build/rustdesk-api-server-pro
 `file` 应显示 `statically linked`，`ldd` 应显示 `not a dynamic executable`。
 
 `server.yaml` 默认使用相对静态目录 `./dist`。从 `build` 目录运行时，API Server 可以直接提供前端页面；正式日常部署仍建议让 Caddy/Nginx 直接提供 `dist`，并把 `/api` 和 `/admin` 反向代理到仅监听本机的 API Server。
+
+Caddy 示例（请替换域名）：
+
+```caddyfile
+api.example.com {
+    encode zstd gzip
+
+    @backend path /api /api/* /admin /admin/*
+    reverse_proxy @backend 127.0.0.1:12345
+
+    root * /opt/rustdesk-api-server-pro/dist
+    try_files {path} /index.html
+    file_server
+}
+```
+
+验证码、登录及所有管理接口都走 `/admin/*`，设备接口走 `/api/*`。如果页面提示 `the backend request error`，先确认新 API Server 已在 `127.0.0.1:12345` 启动，再检查这两个路径是否确实被反向代理，而不是回退到 `index.html`。
 
 ```shell
 cd build

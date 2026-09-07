@@ -223,6 +223,9 @@ func (c *DeviceController) PostHeartbeat() mvc.Result {
 		if len(status.LastError) > 255 {
 			status.LastError = status.LastError[:255]
 		}
+		if len(status.RootExecutor) > 255 {
+			status.RootExecutor = status.RootExecutor[:255]
+		}
 		_, _ = c.Db.ID(device.Id).Cols("applied_revision", "unattended_status", "root_executor", "root_available", "screen_capture_ready", "accessibility_ready", "service_running", "unattended_error", "unattended_reported_at").Update(&model.Device{
 			AppliedRevision: status.PolicyRevision, UnattendedStatus: status.Status,
 			RootExecutor: status.RootExecutor, RootAvailable: status.RootAvailable,
@@ -244,13 +247,13 @@ func (c *DeviceController) PostHeartbeat() mvc.Result {
 	}
 	capability := versionhelper.ResolveCapability(NormalizeReportedVersion(form.Version, form.Ver))
 	strategy := iris.Map{"translate_mode": capability.TranslateMode}
-	response := iris.Map{"modified_at": device.PolicyRevision, "strategy": strategy}
-	if device.PolicyRevision > form.ModifiedAt {
-		resolution, err := devicepolicy.ResolveForDevice(c.Db, device)
-		if err != nil {
-			return responseError(iris.StatusInternalServerError, "failed to resolve device policy")
-		}
-		envelope, err := buildPolicyEnvelope(device, c.ServerConfig, resolution.Effective)
+	effective, err := devicepolicy.ResolveForDevice(c.Db, device)
+	if err != nil {
+		return responseError(iris.StatusInternalServerError, "failed to resolve device policy")
+	}
+	response := iris.Map{"modified_at": effective.Revision, "strategy": strategy}
+	if effective.Revision != form.ModifiedAt {
+		envelope, err := buildPolicyEnvelope(device, c.ServerConfig, effective)
 		if err != nil {
 			return responseError(iris.StatusServiceUnavailable, err.Error())
 		}

@@ -128,7 +128,7 @@ declare namespace Api {
       created_at: string;
       is_online: boolean;
       unattended_enabled: boolean;
-      root_command: 'auto' | 'su' | 'testsu' | 'disabled';
+      root_command: string;
       policy_revision: number;
       applied_revision: number;
       unattended_status: string;
@@ -139,10 +139,15 @@ declare namespace Api {
       service_running: boolean;
       unattended_error: string;
       unattended_reported_at: string;
+      group_id: number;
+      group_name: string;
+      profile_assignment_id: number;
       profile_enabled: boolean;
+      profile_id: number;
+      profile_name: string;
+      profile_source: string;
       profile_id_server: string;
       profile_relay_server: string;
-      profile_api_server: string;
       profile_key_set: boolean;
       profile_password_set: boolean;
       profile_applied_revision: number;
@@ -155,46 +160,45 @@ declare namespace Api {
     type DeviceGroup = {
       id: number;
       name: string;
-      priority: number;
       enabled: boolean;
       member_count: number;
       device_ids: number[];
+      profile_id: number;
     };
-    type PolicyScope = 'global' | 'group' | 'device';
-    type PolicyDocument = {
-      unattended: { enabled?: boolean; root_command?: 'auto' | 'su' | 'testsu' | 'disabled' };
-      server_profile: {
-        enabled?: boolean;
-        id_server?: string;
-        relay_server?: string;
-        api_server?: string;
-        key?: string;
-        permanent_password?: string;
-        key_set?: boolean;
-        permanent_password_set?: boolean;
-      };
-    };
-    type ManagedPolicy = {
-      scope_type: PolicyScope;
-      scope_id: number;
-      revision: number;
+    type StrategyScope = 'global' | 'group' | 'device';
+    type ServerProfile = {
+      id: number;
+      name: string;
+      id_server: string;
+      relay_server: string;
+      server_key: string;
+      password_set: boolean;
       enabled: boolean;
-      document: PolicyDocument;
     };
-    type ManagedPolicyInput = Omit<ManagedPolicy, 'revision'>;
-    type PolicyPreview = {
-      device_id: number;
-      layers: string[];
-      effective: {
-        unattended_enabled: boolean;
-        root_command: string;
-        profile_enabled: boolean;
-        id_server: string;
-        relay_server: string;
-        api_server: string;
-        key_set: boolean;
-        permanent_password_set: boolean;
-      };
+    type ServerProfileInput = {
+      name: string;
+      id_server: string;
+      relay_server: string;
+      server_key: string;
+      permanent_password?: string;
+      enabled: boolean;
+    };
+    type ServerProfilesResult = {
+      profiles: ServerProfile[];
+      global_profile_id: number;
+    };
+    type ServerProfilePreview = {
+      revision: number;
+      unattended_enabled: boolean;
+      root_command: string;
+      profile_enabled: boolean;
+      profile_id: number;
+      profile_name: string;
+      profile_source: string;
+      id_server: string;
+      relay_server: string;
+      server_key: string;
+      password_set: boolean;
     };
     type DeviceSearchParams = CommonType.RecordNullable<
       Pick<Api.Devices.Device, 'username' | 'hostname' | 'rustdesk_id'> & Api.Common.CommonSearchParams

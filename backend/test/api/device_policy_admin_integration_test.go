@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -48,13 +49,16 @@ func adminJSON(t *testing.T, app http.Handler, method, path string, body any) ma
 	return result
 }
 
-func TestAdminHierarchicalPolicyAndPreview(t *testing.T) {
-	db, err := xorm.NewEngine("sqlite", fmt.Sprintf("file:policy-admin-%d?mode=memory&cache=shared", time.Now().UnixNano()))
+func TestAdminServerProfilesAssignmentsAndPreview(t *testing.T) {
+	db, err := xorm.NewEngine("sqlite", fmt.Sprintf("file:strategy-admin-%d?mode=memory&cache=shared", time.Now().UnixNano()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if err = db.Sync(new(model.User), new(model.AuthToken), new(model.Device), new(model.DeviceGroup), new(model.DeviceGroupMember), new(model.ManagedDevicePolicy)); err != nil {
+	if err = db.Sync(
+		new(model.User), new(model.AuthToken), new(model.Device), new(model.DeviceGroup),
+		new(model.DeviceGroupMember), new(model.ServerProfile), new(model.ServerProfileAssignment), new(model.StrategyState),
+	); err != nil {
 		t.Fatal(err)
 	}
 	admin := model.User{Username: "admin", Status: 1, IsAdmin: true}
@@ -64,15 +68,12 @@ func TestAdminHierarchicalPolicyAndPreview(t *testing.T) {
 	if _, err = db.Exec("INSERT INTO auth_token(user_id, token, expired, is_admin, status) VALUES(?, ?, ?, 1, 1)", admin.Id, "test-admin-token", time.Now().Add(time.Hour).Format(config.TimeFormat)); err != nil {
 		t.Fatal(err)
 	}
-	var token model.AuthToken
-	if found, findErr := db.Where("token = ? and expired > ? and status = 1 and is_admin = 1", "test-admin-token", time.Now().Format(config.TimeFormat)).Get(&token); findErr != nil || !found {
-		t.Fatalf("admin token fixture is invalid: found=%v err=%v", found, findErr)
-	}
 	device := model.Device{RustdeskId: "123", RootCommand: "auto"}
 	if _, err = db.Insert(&device); err != nil {
 		t.Fatal(err)
 	}
 	cfg := config.GetDefaultServerConfig()
+	cfg.ProvisioningSecretKey = base64.StdEncoding.EncodeToString([]byte("01234567890123456789012345678901"))
 	application := iris.New()
 	application.RegisterDependency(db, cfg)
 	appserver.SetRoute(application)
@@ -80,35 +81,33 @@ func TestAdminHierarchicalPolicyAndPreview(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	created := adminJSON(t, application, http.MethodPost, "/admin/devices/groups", map[string]any{"name": "kiosks", "priority": 10, "enabled": true})
-	groupID := int(created["data"].(map[string]any)["id"].(float64))
+	created := adminJSON(t, application, http.MethodPost, "/admin/devices/server-profiles", map[string]any{
+		"name": "Primary", "id_server": "id.example.com", "relay_server": "relay.example.com",
+		"server_key": "public-key", "permanent_password": "private-password", "enabled": true,
+	})
+	createdData := created["data"].(map[string]any)
+	profileID := int(createdData["id"].(float64))
+	createdJSON, _ := json.Marshal(created)
+	if strings.Contains(string(createdJSON), "private-password") || createdData["password_set"] != true {
+		t.Fatalf("profile response exposed or lost password state: %s", createdJSON)
+	}
+	groupResult := adminJSON(t, application, http.MethodPost, "/admin/devices/groups", map[string]any{"name": "Kiosks", "enabled": true})
+	groupID := int(groupResult["data"].(map[string]any)["id"].(float64))
 	adminJSON(t, application, http.MethodPut, "/admin/devices/groups/members", map[string]any{"group_id": groupID, "device_ids": []int{device.Id}})
-	adminJSON(t, application, http.MethodPut, "/admin/devices/policy", map[string]any{"scope_type": "global", "scope_id": 0, "enabled": true, "document": map[string]any{"unattended": map[string]any{"enabled": true}, "server_profile": map[string]any{}}})
-	adminJSON(t, application, http.MethodPut, "/admin/devices/policy", map[string]any{"scope_type": "group", "scope_id": groupID, "enabled": true, "document": map[string]any{"unattended": map[string]any{"root_command": "su"}, "server_profile": map[string]any{}}})
-	adminJSON(t, application, http.MethodPut, "/admin/devices/policy", map[string]any{"scope_type": "device", "scope_id": device.Id, "enabled": true, "document": map[string]any{"unattended": map[string]any{"enabled": false}, "server_profile": map[string]any{"key": "private-key", "permanent_password": "private-password"}}})
-	stored := adminJSON(t, application, http.MethodGet, fmt.Sprintf("/admin/devices/policy?scope_type=device&scope_id=%d", device.Id), nil)
-	storedJSON, _ := json.Marshal(stored)
-	if strings.Contains(string(storedJSON), "private-key") || strings.Contains(string(storedJSON), "private-password") {
-		t.Fatalf("policy response exposed a secret: %s", storedJSON)
+	adminJSON(t, application, http.MethodPut, "/admin/devices/server-profile-assignment", map[string]any{
+		"scope_type": "group", "scope_id": groupID, "profile_id": profileID,
+	})
+	preview := adminJSON(t, application, http.MethodGet, fmt.Sprintf("/admin/devices/server-profile-preview?device_id=%d", device.Id), nil)
+	effective := preview["data"].(map[string]any)
+	if effective["profile_name"] != "Primary" || effective["profile_source"] != "group:Kiosks" || effective["root_command"] != "auto" {
+		t.Fatalf("unexpected effective strategy: %v", effective)
 	}
-	preview := adminJSON(t, application, http.MethodGet, fmt.Sprintf("/admin/devices/policy/preview?device_id=%d", device.Id), nil)
-	data := preview["data"].(map[string]any)
-	effective := data["effective"].(map[string]any)
-	if effective["unattended_enabled"] != false || effective["root_command"] != "su" {
-		t.Fatalf("unexpected preview: %v", data)
-	}
-	if effective["key_set"] != true || effective["permanent_password_set"] != true {
-		t.Fatalf("preview lost secret presence flags: %v", effective)
-	}
-	layers := data["layers"].([]any)
-	if len(layers) != 3 || layers[0] != "global" || layers[2] != "device" {
-		t.Fatalf("unexpected layers: %v", layers)
-	}
-	loaded := model.Device{}
-	if _, err = db.ID(device.Id).Get(&loaded); err != nil {
-		t.Fatal(err)
-	}
-	if loaded.PolicyRevision != 4 {
-		t.Fatalf("policy revision = %d, want 4", loaded.PolicyRevision)
+	adminJSON(t, application, http.MethodPut, "/admin/devices/unattended", map[string]any{
+		"id": device.Id, "enabled": true, "root_command": "/system/xbin/su",
+	})
+	preview = adminJSON(t, application, http.MethodGet, fmt.Sprintf("/admin/devices/server-profile-preview?device_id=%d", device.Id), nil)
+	effective = preview["data"].(map[string]any)
+	if effective["unattended_enabled"] != true || effective["root_command"] != "/system/xbin/su" {
+		t.Fatalf("unexpected unattended strategy: %v", effective)
 	}
 }
