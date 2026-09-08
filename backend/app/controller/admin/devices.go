@@ -5,7 +5,6 @@ import (
 	devicepolicy "rustdesk-api-server-pro/app/policy"
 	"rustdesk-api-server-pro/config"
 	"rustdesk-api-server-pro/db"
-	"strings"
 
 	"github.com/kataras/iris/v12"
 	"github.com/kataras/iris/v12/mvc"
@@ -23,49 +22,7 @@ func (c *DevicesController) BeforeActivation(b mvc.BeforeActivation) {
 	b.Handle("GET", "/devices/alias", "HandleAliasTargets")
 	b.Handle("PUT", "/devices/alias", "HandleDeviceAlias")
 	b.Handle("DELETE", "/devices/record", "HandleDeviceDelete")
-	b.Handle("PUT", "/devices/unattended", "HandleUnattended")
 	registerPolicyRoutes(b)
-}
-
-func (c *DevicesController) HandleUnattended() mvc.Result {
-	var form struct {
-		Id          int    `json:"id"`
-		Enabled     bool   `json:"enabled"`
-		RootCommand string `json:"root_command"`
-	}
-	if err := c.Ctx.ReadJSON(&form); err != nil || form.Id <= 0 {
-		return c.Error(nil, "DataError")
-	}
-	form.RootCommand = strings.TrimSpace(form.RootCommand)
-	if !devicepolicy.ValidRootCommand(form.RootCommand) {
-		return c.Error(nil, "InvalidRootCommand")
-	}
-	device := model.Device{}
-	has, err := c.Db.ID(form.Id).Get(&device)
-	if err != nil || !has {
-		return c.Error(nil, "DeviceNotFound")
-	}
-	session := c.Db.NewSession()
-	defer session.Close()
-	if err = session.Begin(); err != nil {
-		return c.Error(nil, err.Error())
-	}
-	if _, err = session.Table(new(model.Device)).ID(form.Id).Update(map[string]interface{}{
-		"unattended_enabled": form.Enabled,
-		"root_command":       form.RootCommand,
-	}); err != nil {
-		session.Rollback()
-		return c.Error(nil, err.Error())
-	}
-	revision, err := devicepolicy.NextRevision(session)
-	if err != nil {
-		session.Rollback()
-		return c.Error(nil, err.Error())
-	}
-	if err = session.Commit(); err != nil {
-		return c.Error(nil, err.Error())
-	}
-	return c.Success(iris.Map{"policy_revision": revision}, "ok")
 }
 
 func (c *DevicesController) HandleList() mvc.Result {
@@ -137,8 +94,8 @@ func (c *DevicesController) HandleList() mvc.Result {
 			"created_at":               a.CreatedAt.Format(config.TimeFormat),
 			"is_online":                a.IsOnline,
 			"disabled":                 a.Disabled,
-			"unattended_enabled":       a.UnattendedEnabled,
-			"root_command":             a.RootCommand,
+			"unattended_enabled":       effective.UnattendedEnabled,
+			"root_command":             effective.RootCommand,
 			"policy_revision":          effective.Revision,
 			"applied_revision":         a.AppliedRevision,
 			"unattended_status":        a.UnattendedStatus,
@@ -153,7 +110,10 @@ func (c *DevicesController) HandleList() mvc.Result {
 			"group_id":                 a.StrategyGroupId,
 			"group_name":               groupName,
 			"group_enabled":            groupEnabled,
-			"profile_assignment_id":    a.StrategyProfileId,
+			"effective_group_id":       effective.GroupID,
+			"effective_group_name":     effective.GroupName,
+			"group_source":             effective.GroupSource,
+			"group_warning":            effective.GroupWarning,
 			"profile_enabled":          effective.ProfileEnabled,
 			"profile_id":               effective.Profile.ID,
 			"profile_name":             effective.Profile.Name,
@@ -161,7 +121,7 @@ func (c *DevicesController) HandleList() mvc.Result {
 			"profile_id_server":        effective.Profile.IDServer,
 			"profile_relay_server":     effective.Profile.RelayServer,
 			"profile_key_set":          effective.Profile.ServerKey != "",
-			"profile_password_set":     effective.Profile.PasswordCiphertext != "",
+			"profile_password_set":     effective.PasswordCiphertext != "",
 			"profile_applied_revision": a.ProfileAppliedRevision,
 			"profile_active_source":    a.ProfileActiveSource,
 			"profile_connected":        a.ProfileConnected,

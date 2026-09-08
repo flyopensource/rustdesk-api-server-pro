@@ -67,9 +67,11 @@ func buildPolicyEnvelope(device *model.Device, cfg *config.ServerConfig, effecti
 	policy.ServerProfile.IDServer = effective.Profile.IDServer
 	policy.ServerProfile.RelayServer = effective.Profile.RelayServer
 	policy.ServerProfile.Key = effective.Profile.ServerKey
-	policy.ServerProfile.PermanentPassword, err = devicepolicy.DecryptPassword(effective.Profile.PasswordCiphertext, cfg.ProvisioningSecretKey)
-	if err != nil {
-		return "", err
+	if effective.UnattendedEnabled {
+		policy.ServerProfile.PermanentPassword, err = devicepolicy.DecryptPassword(effective.PasswordCiphertext, cfg.ProvisioningSecretKey)
+		if err != nil {
+			return "", err
+		}
 	}
 	plaintext, err := json.Marshal(policy)
 	if err != nil {

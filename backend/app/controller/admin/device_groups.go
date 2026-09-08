@@ -12,20 +12,24 @@ import (
 )
 
 type serverProfileForm struct {
-	Id                int     `json:"id"`
-	Name              string  `json:"name"`
-	IDServer          string  `json:"id_server"`
-	RelayServer       string  `json:"relay_server"`
-	ServerKey         string  `json:"server_key"`
-	PermanentPassword *string `json:"permanent_password"`
-	Enabled           bool    `json:"enabled"`
+	Id          int    `json:"id"`
+	Name        string `json:"name"`
+	IDServer    string `json:"id_server"`
+	RelayServer string `json:"relay_server"`
+	ServerKey   string `json:"server_key"`
+	Enabled     bool   `json:"enabled"`
 }
 
 type deviceGroupForm struct {
-	Id        int    `json:"id"`
-	Name      string `json:"name"`
-	Enabled   bool   `json:"enabled"`
-	ProfileId int    `json:"profile_id"`
+	Id                int     `json:"id"`
+	Name              string  `json:"name"`
+	Enabled           bool    `json:"enabled"`
+	IsDefault         bool    `json:"is_default"`
+	ProfileId         int     `json:"profile_id"`
+	UnattendedEnabled bool    `json:"unattended_enabled"`
+	PermanentPassword *string `json:"permanent_password"`
+	ClearPassword     bool    `json:"clear_password"`
+	RootCommand       string  `json:"root_command"`
 }
 
 func registerPolicyRoutes(b mvc.BeforeActivation) {
@@ -38,9 +42,7 @@ func registerPolicyRoutes(b mvc.BeforeActivation) {
 	b.Handle("POST", "/devices/server-profiles", "HandleCreateServerProfile")
 	b.Handle("PUT", "/devices/server-profiles", "HandleUpdateServerProfile")
 	b.Handle("DELETE", "/devices/server-profiles", "HandleDeleteServerProfile")
-	b.Handle("PUT", "/devices/server-profile", "HandleDeviceServerProfile")
-	b.Handle("PUT", "/devices/global-server-profile", "HandleGlobalServerProfile")
-	b.Handle("GET", "/devices/server-profile-preview", "HandleServerProfilePreview")
+	b.Handle("GET", "/devices/policy-preview", "HandlePolicyPreview")
 }
 
 func (c *DevicesController) HandleServerProfiles() mvc.Result {
@@ -48,27 +50,17 @@ func (c *DevicesController) HandleServerProfiles() mvc.Result {
 	if err := c.Db.Asc("name", "id").Find(&profiles); err != nil {
 		return c.Error(nil, err.Error())
 	}
-	state, err := devicepolicy.CurrentState(c.Db)
-	if err != nil {
-		return c.Error(nil, err.Error())
-	}
 	result := make([]iris.Map, 0, len(profiles))
 	for _, profile := range profiles {
-		groupCount, countErr := c.Db.Where("profile_id = ?", profile.Id).Count(new(model.DeviceGroup))
-		if countErr != nil {
-			return c.Error(nil, countErr.Error())
-		}
-		deviceCount, countErr := c.Db.Where("strategy_profile_id = ?", profile.Id).Count(new(model.Device))
-		if countErr != nil {
-			return c.Error(nil, countErr.Error())
+		groupCount, err := c.Db.Where("profile_id = ?", profile.Id).Count(new(model.DeviceGroup))
+		if err != nil {
+			return c.Error(nil, err.Error())
 		}
 		item := serverProfileResponse(profile)
-		item["is_global_default"] = state.GlobalProfileId == profile.Id
 		item["group_count"] = groupCount
-		item["device_count"] = deviceCount
 		result = append(result, item)
 	}
-	return c.Success(iris.Map{"profiles": result, "global_profile_id": state.GlobalProfileId}, "ok")
+	return c.Success(iris.Map{"profiles": result}, "ok")
 }
 
 func (c *DevicesController) HandleCreateServerProfile() mvc.Result {
@@ -76,32 +68,25 @@ func (c *DevicesController) HandleCreateServerProfile() mvc.Result {
 	if c.Ctx.ReadJSON(&form) != nil || validateServerProfileForm(&form) != nil {
 		return c.Error(nil, "InvalidServerProfile")
 	}
-	password := ""
-	if form.PermanentPassword != nil {
-		password = *form.PermanentPassword
-	}
-	ciphertext, err := devicepolicy.EncryptPassword(password, c.Cfg.ProvisioningSecretKey)
-	if err != nil {
-		return c.Error(nil, err.Error())
-	}
 	profile := model.ServerProfile{
 		Name: strings.TrimSpace(form.Name), IdServer: strings.TrimSpace(form.IDServer),
 		RelayServer: strings.TrimSpace(form.RelayServer), ServerKey: strings.TrimSpace(form.ServerKey),
-		PasswordCiphertext: ciphertext, Enabled: form.Enabled,
+		Enabled: form.Enabled,
 	}
 	session := c.Db.NewSession()
 	defer session.Close()
-	if err = session.Begin(); err != nil {
+	if err := session.Begin(); err != nil {
 		return c.Error(nil, err.Error())
 	}
-	if _, err = session.Insert(&profile); err == nil {
-		_, err = devicepolicy.NextRevision(session)
-	}
-	if err != nil {
+	if _, err := session.Insert(&profile); err != nil {
 		session.Rollback()
 		return c.Error(nil, err.Error())
 	}
-	if err = session.Commit(); err != nil {
+	if _, err := devicepolicy.NextRevision(session); err != nil {
+		session.Rollback()
+		return c.Error(nil, err.Error())
+	}
+	if err := session.Commit(); err != nil {
 		return c.Error(nil, err.Error())
 	}
 	return c.Success(serverProfileResponse(profile), "ok")
@@ -117,23 +102,22 @@ func (c *DevicesController) HandleUpdateServerProfile() mvc.Result {
 	if err != nil || !has {
 		return c.Error(nil, "ServerProfileNotFound")
 	}
-	profile.Name = strings.TrimSpace(form.Name)
-	profile.IdServer = strings.TrimSpace(form.IDServer)
-	profile.RelayServer = strings.TrimSpace(form.RelayServer)
-	profile.ServerKey = strings.TrimSpace(form.ServerKey)
-	profile.Enabled = form.Enabled
-	if form.PermanentPassword != nil {
-		profile.PasswordCiphertext, err = devicepolicy.EncryptPassword(*form.PermanentPassword, c.Cfg.ProvisioningSecretKey)
-		if err != nil {
-			return c.Error(nil, err.Error())
-		}
+	updated := model.ServerProfile{
+		Name: strings.TrimSpace(form.Name), IdServer: strings.TrimSpace(form.IDServer),
+		RelayServer: strings.TrimSpace(form.RelayServer), ServerKey: strings.TrimSpace(form.ServerKey),
+		Enabled: form.Enabled,
+	}
+	if profile.Name == updated.Name && profile.IdServer == updated.IdServer &&
+		profile.RelayServer == updated.RelayServer && profile.ServerKey == updated.ServerKey &&
+		profile.Enabled == updated.Enabled {
+		return c.Success(serverProfileResponse(profile), "ok")
 	}
 	session := c.Db.NewSession()
 	defer session.Close()
 	if err = session.Begin(); err != nil {
 		return c.Error(nil, err.Error())
 	}
-	if _, err = session.ID(profile.Id).Cols("name", "id_server", "relay_server", "server_key", "password_ciphertext", "enabled").Update(&profile); err == nil {
+	if _, err = session.ID(profile.Id).Cols("name", "id_server", "relay_server", "server_key", "enabled").Update(&updated); err == nil {
 		_, err = devicepolicy.NextRevision(session)
 	}
 	if err != nil {
@@ -143,7 +127,8 @@ func (c *DevicesController) HandleUpdateServerProfile() mvc.Result {
 	if err = session.Commit(); err != nil {
 		return c.Error(nil, err.Error())
 	}
-	return c.Success(serverProfileResponse(profile), "ok")
+	updated.Id = profile.Id
+	return c.Success(serverProfileResponse(updated), "ok")
 }
 
 func (c *DevicesController) HandleDeleteServerProfile() mvc.Result {
@@ -181,88 +166,7 @@ func (c *DevicesController) HandleDeleteServerProfile() mvc.Result {
 	return c.Success(nil, "ok")
 }
 
-func (c *DevicesController) HandleDeviceServerProfile() mvc.Result {
-	var form struct {
-		Id        int `json:"id"`
-		ProfileId int `json:"profile_id"`
-	}
-	if c.Ctx.ReadJSON(&form) != nil || form.Id <= 0 || form.ProfileId < 0 {
-		return c.Error(nil, "InvalidServerProfile")
-	}
-	if err := validateSelectableProfile(c.Db, form.ProfileId); err != nil {
-		return c.Error(nil, err.Error())
-	}
-	device := model.Device{}
-	has, err := c.Db.ID(form.Id).Get(&device)
-	if err != nil || !has {
-		return c.Error(nil, "DeviceNotFound")
-	}
-	if device.StrategyProfileId == form.ProfileId {
-		effective, resolveErr := devicepolicy.ResolveForDevice(c.Db, &device)
-		if resolveErr != nil {
-			return c.Error(nil, resolveErr.Error())
-		}
-		return c.Success(effectivePolicyResponse(effective), "ok")
-	}
-	session := c.Db.NewSession()
-	defer session.Close()
-	if err = session.Begin(); err != nil {
-		return c.Error(nil, err.Error())
-	}
-	if _, err = session.ID(device.Id).Cols("strategy_profile_id").Update(&model.Device{StrategyProfileId: form.ProfileId}); err == nil {
-		_, err = devicepolicy.NextRevision(session)
-	}
-	if err != nil {
-		session.Rollback()
-		return c.Error(nil, err.Error())
-	}
-	if err = session.Commit(); err != nil {
-		return c.Error(nil, err.Error())
-	}
-	device.StrategyProfileId = form.ProfileId
-	effective, err := devicepolicy.ResolveForDevice(c.Db, &device)
-	if err != nil {
-		return c.Error(nil, err.Error())
-	}
-	return c.Success(effectivePolicyResponse(effective), "ok")
-}
-
-func (c *DevicesController) HandleGlobalServerProfile() mvc.Result {
-	var form struct {
-		ProfileId int `json:"profile_id"`
-	}
-	if c.Ctx.ReadJSON(&form) != nil || form.ProfileId < 0 {
-		return c.Error(nil, "InvalidServerProfile")
-	}
-	if err := validateSelectableProfile(c.Db, form.ProfileId); err != nil {
-		return c.Error(nil, err.Error())
-	}
-	state, err := devicepolicy.CurrentState(c.Db)
-	if err != nil {
-		return c.Error(nil, err.Error())
-	}
-	if state.GlobalProfileId == form.ProfileId {
-		return c.Success(iris.Map{"revision": state.Revision}, "ok")
-	}
-	session := c.Db.NewSession()
-	defer session.Close()
-	if err = session.Begin(); err != nil {
-		return c.Error(nil, err.Error())
-	}
-	if _, err = session.ID(state.Id).Cols("global_profile_id").Update(&model.StrategyState{GlobalProfileId: form.ProfileId}); err == nil {
-		_, err = devicepolicy.NextRevision(session)
-	}
-	if err != nil {
-		session.Rollback()
-		return c.Error(nil, err.Error())
-	}
-	if err = session.Commit(); err != nil {
-		return c.Error(nil, err.Error())
-	}
-	return c.Success(nil, "ok")
-}
-
-func (c *DevicesController) HandleServerProfilePreview() mvc.Result {
+func (c *DevicesController) HandlePolicyPreview() mvc.Result {
 	id := c.Ctx.URLParamIntDefault("device_id", 0)
 	device := model.Device{}
 	has, err := c.Db.ID(id).Get(&device)
@@ -281,18 +185,25 @@ func (c *DevicesController) HandleGroups() mvc.Result {
 	if err := c.Db.Asc("name", "id").Find(&groups); err != nil {
 		return c.Error(nil, err.Error())
 	}
+	state, err := devicepolicy.CurrentState(c.Db)
+	if err != nil {
+		return c.Error(nil, err.Error())
+	}
+	unassignedCount, err := c.Db.Where("strategy_group_id = ?", 0).Count(new(model.Device))
+	if err != nil {
+		return c.Error(nil, err.Error())
+	}
 	result := make([]iris.Map, 0, len(groups))
 	for _, group := range groups {
-		memberCount, err := c.Db.Where("strategy_group_id = ?", group.Id).Count(new(model.Device))
-		if err != nil {
-			return c.Error(nil, err.Error())
+		item, responseErr := c.deviceGroupResponse(group, state.DefaultGroupId == group.Id, unassignedCount)
+		if responseErr != nil {
+			return c.Error(nil, responseErr.Error())
 		}
-		result = append(result, iris.Map{
-			"id": group.Id, "name": group.Name, "enabled": group.Enabled,
-			"member_count": memberCount, "profile_id": group.ProfileId,
-		})
+		result = append(result, item)
 	}
-	return c.Success(result, "ok")
+	return c.Success(iris.Map{
+		"groups": result, "default_group_id": state.DefaultGroupId, "unassigned_device_count": unassignedCount,
+	}, "ok")
 }
 
 func (c *DevicesController) HandleCreateGroup() mvc.Result {
@@ -303,10 +214,35 @@ func (c *DevicesController) HandleCreateGroup() mvc.Result {
 	if err := validateSelectableProfile(c.Db, form.ProfileId); err != nil {
 		return c.Error(nil, err.Error())
 	}
+	password := ""
+	if form.PermanentPassword != nil {
+		password = *form.PermanentPassword
+	}
+	ciphertext, err := devicepolicy.EncryptPassword(password, c.Cfg.ProvisioningSecretKey)
+	if err != nil {
+		return c.Error(nil, err.Error())
+	}
 	group := model.DeviceGroup{
 		Name: strings.TrimSpace(form.Name), Enabled: form.Enabled, ProfileId: form.ProfileId,
+		UnattendedEnabled: form.UnattendedEnabled, PasswordCiphertext: ciphertext,
+		RootCommand: form.RootCommand,
 	}
-	if _, err := c.Db.Insert(&group); err != nil {
+	session := c.Db.NewSession()
+	defer session.Close()
+	if err = session.Begin(); err != nil {
+		return c.Error(nil, err.Error())
+	}
+	if _, err = session.Insert(&group); err == nil {
+		_, err = updateGroupDefault(session, group.Id, form.IsDefault)
+	}
+	if err == nil {
+		_, err = devicepolicy.NextRevision(session)
+	}
+	if err != nil {
+		session.Rollback()
+		return c.Error(nil, err.Error())
+	}
+	if err = session.Commit(); err != nil {
 		return c.Error(nil, err.Error())
 	}
 	return c.Success(iris.Map{"id": group.Id}, "ok")
@@ -325,17 +261,38 @@ func (c *DevicesController) HandleUpdateGroup() mvc.Result {
 	if err != nil || !has {
 		return c.Error(nil, "DeviceGroupNotFound")
 	}
-	name := strings.TrimSpace(form.Name)
-	if group.Name == name && group.Enabled == form.Enabled && group.ProfileId == form.ProfileId {
-		return c.Success(nil, "ok")
+	ciphertext := group.PasswordCiphertext
+	if form.ClearPassword {
+		ciphertext = ""
+	} else if form.PermanentPassword != nil && *form.PermanentPassword != "" {
+		ciphertext, err = devicepolicy.EncryptPassword(*form.PermanentPassword, c.Cfg.ProvisioningSecretKey)
+		if err != nil {
+			return c.Error(nil, err.Error())
+		}
 	}
+	updated := model.DeviceGroup{
+		Name: strings.TrimSpace(form.Name), Enabled: form.Enabled, ProfileId: form.ProfileId,
+		UnattendedEnabled: form.UnattendedEnabled, PasswordCiphertext: ciphertext,
+		RootCommand: form.RootCommand,
+	}
+	groupChanged := group.Name != updated.Name || group.Enabled != updated.Enabled ||
+		group.ProfileId != updated.ProfileId || group.UnattendedEnabled != updated.UnattendedEnabled ||
+		group.PasswordCiphertext != updated.PasswordCiphertext || group.RootCommand != updated.RootCommand
 	session := c.Db.NewSession()
 	defer session.Close()
 	if err = session.Begin(); err != nil {
 		return c.Error(nil, err.Error())
 	}
-	updated := model.DeviceGroup{Name: name, Enabled: form.Enabled, ProfileId: form.ProfileId}
-	if _, err = session.ID(form.Id).Cols("name", "enabled", "profile_id").Update(&updated); err == nil {
+	if groupChanged {
+		_, err = session.ID(form.Id).Cols(
+			"name", "enabled", "profile_id", "unattended_enabled", "password_ciphertext", "root_command",
+		).Update(&updated)
+	}
+	defaultChanged := false
+	if err == nil {
+		defaultChanged, err = updateGroupDefault(session, form.Id, form.IsDefault)
+	}
+	if err == nil && (groupChanged || defaultChanged) {
 		_, err = devicepolicy.NextRevision(session)
 	}
 	if err != nil {
@@ -346,6 +303,33 @@ func (c *DevicesController) HandleUpdateGroup() mvc.Result {
 		return c.Error(nil, err.Error())
 	}
 	return c.Success(nil, "ok")
+}
+
+func updateGroupDefault(session *xorm.Session, groupID int, isDefault bool) (bool, error) {
+	state := model.StrategyState{Id: 1}
+	has, err := session.ID(state.Id).Get(&state)
+	if err != nil {
+		return false, err
+	}
+	if !has {
+		if !isDefault {
+			return false, nil
+		}
+		state.DefaultGroupId = groupID
+		_, err = session.Insert(&state)
+		return err == nil, err
+	}
+	desired := state.DefaultGroupId
+	if isDefault {
+		desired = groupID
+	} else if desired == groupID {
+		desired = 0
+	}
+	if desired == state.DefaultGroupId {
+		return false, nil
+	}
+	_, err = session.ID(state.Id).Cols("default_group_id").Update(&model.StrategyState{DefaultGroupId: desired})
+	return err == nil, err
 }
 
 func (c *DevicesController) HandleDeleteGroup() mvc.Result {
@@ -362,6 +346,10 @@ func (c *DevicesController) HandleDeleteGroup() mvc.Result {
 		return c.Error(nil, err.Error())
 	}
 	if _, err := session.Where("strategy_group_id = ?", id).Cols("strategy_group_id").Update(&model.Device{StrategyGroupId: 0}); err != nil {
+		session.Rollback()
+		return c.Error(nil, err.Error())
+	}
+	if _, err := session.ID(1).Where("default_group_id = ?", id).Cols("default_group_id").Update(&model.StrategyState{DefaultGroupId: 0}); err != nil {
 		session.Rollback()
 		return c.Error(nil, err.Error())
 	}
@@ -391,12 +379,8 @@ func (c *DevicesController) HandleDeviceGroup() mvc.Result {
 	if c.Ctx.ReadJSON(&form) != nil || form.Id <= 0 || form.GroupId < 0 {
 		return c.Error(nil, "InvalidDeviceGroup")
 	}
-	if form.GroupId > 0 {
-		group := model.DeviceGroup{}
-		has, err := c.Db.ID(form.GroupId).Where("enabled = ?", true).Get(&group)
-		if err != nil || !has {
-			return c.Error(nil, "DeviceGroupNotFound")
-		}
+	if err := validateSelectableGroup(c.Db, form.GroupId); err != nil {
+		return c.Error(nil, err.Error())
 	}
 	device := model.Device{}
 	has, err := c.Db.ID(form.Id).Get(&device)
@@ -446,23 +430,27 @@ func validateServerProfileForm(form *serverProfileForm) error {
 			return errors.New("invalid server profile")
 		}
 	}
-	if form.PermanentPassword != nil && len(*form.PermanentPassword) > 255 {
-		return errors.New("invalid server profile")
-	}
 	return nil
 }
 
 func validateDeviceGroupForm(form *deviceGroupForm) error {
 	form.Name = strings.TrimSpace(form.Name)
-	if form.Name == "" || len(form.Name) > 100 || form.ProfileId < 0 {
+	form.RootCommand = strings.TrimSpace(form.RootCommand)
+	if form.RootCommand == "" {
+		form.RootCommand = "auto"
+	}
+	if form.Name == "" || len(form.Name) > 100 || form.ProfileId <= 0 || form.IsDefault && !form.Enabled ||
+		!devicepolicy.ValidRootCommand(form.RootCommand) ||
+		(form.PermanentPassword != nil && len(*form.PermanentPassword) > 255) ||
+		(form.ClearPassword && form.PermanentPassword != nil && *form.PermanentPassword != "") {
 		return errors.New("invalid device group")
 	}
 	return nil
 }
 
 func validateSelectableProfile(db *xorm.Engine, id int) error {
-	if id == 0 {
-		return nil
+	if id <= 0 {
+		return errors.New("ServerProfileNotFound")
 	}
 	has, err := db.ID(id).Where("enabled = ?", true).Exist(new(model.ServerProfile))
 	if err != nil {
@@ -474,35 +462,61 @@ func validateSelectableProfile(db *xorm.Engine, id int) error {
 	return nil
 }
 
-func serverProfileInUse(db *xorm.Engine, id int) (bool, error) {
-	for _, reference := range []struct {
-		column string
-		model  any
-	}{
-		{"global_profile_id", new(model.StrategyState)},
-		{"profile_id", new(model.DeviceGroup)},
-		{"strategy_profile_id", new(model.Device)},
-	} {
-		has, err := db.Where(reference.column+" = ?", id).Exist(reference.model)
-		if err != nil || has {
-			return has, err
-		}
+func validateSelectableGroup(db *xorm.Engine, id int) error {
+	if id == 0 {
+		return nil
 	}
-	return false, nil
+	group := model.DeviceGroup{}
+	has, err := db.ID(id).Where("enabled = ?", true).Get(&group)
+	if err != nil {
+		return err
+	}
+	if !has {
+		return errors.New("DeviceGroupNotFound")
+	}
+	return validateSelectableProfile(db, group.ProfileId)
+}
+
+func serverProfileInUse(db *xorm.Engine, id int) (bool, error) {
+	return db.Where("profile_id = ?", id).Exist(new(model.DeviceGroup))
 }
 
 func serverProfileResponse(profile model.ServerProfile) iris.Map {
 	return iris.Map{
 		"id": profile.Id, "name": profile.Name, "id_server": profile.IdServer,
 		"relay_server": profile.RelayServer, "server_key": profile.ServerKey,
-		"password_set": profile.PasswordCiphertext != "", "enabled": profile.Enabled,
-		"is_global_default": false, "group_count": 0, "device_count": 0,
+		"enabled": profile.Enabled, "group_count": 0,
 	}
+}
+
+func (c *DevicesController) deviceGroupResponse(group model.DeviceGroup, isDefault bool, unassignedCount int64) (iris.Map, error) {
+	memberCount, err := c.Db.Where("strategy_group_id = ?", group.Id).Count(new(model.Device))
+	if err != nil {
+		return nil, err
+	}
+	profile := model.ServerProfile{}
+	profileFound, err := c.Db.ID(group.ProfileId).Get(&profile)
+	if err != nil {
+		return nil, err
+	}
+	passwordSet := group.PasswordCiphertext != ""
+	return iris.Map{
+		"id": group.Id, "name": group.Name, "enabled": group.Enabled,
+		"member_count": memberCount, "default_coverage_count": unassignedCount, "profile_id": group.ProfileId,
+		"profile_name": profile.Name, "profile_enabled": profileFound && profile.Enabled,
+		"unattended_enabled": group.UnattendedEnabled, "password_set": passwordSet,
+		"root_command": group.RootCommand, "is_default": isDefault,
+		"configuration_complete": profileFound && profile.Enabled && (!group.UnattendedEnabled || passwordSet),
+	}, nil
 }
 
 func effectivePolicyResponse(effective devicepolicy.Effective) iris.Map {
 	return iris.Map{
 		"revision":           effective.Revision,
+		"group_id":           effective.GroupID,
+		"group_name":         effective.GroupName,
+		"group_source":       effective.GroupSource,
+		"group_warning":      effective.GroupWarning,
 		"unattended_enabled": effective.UnattendedEnabled,
 		"root_command":       effective.RootCommand,
 		"profile_enabled":    effective.ProfileEnabled,
@@ -512,6 +526,6 @@ func effectivePolicyResponse(effective devicepolicy.Effective) iris.Map {
 		"id_server":          effective.Profile.IDServer,
 		"relay_server":       effective.Profile.RelayServer,
 		"server_key":         effective.Profile.ServerKey,
-		"password_set":       effective.Profile.PasswordCiphertext != "",
+		"password_set":       effective.PasswordCiphertext != "",
 	}
 }

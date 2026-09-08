@@ -105,7 +105,7 @@ func managementRequest(t *testing.T, app http.Handler, method, path, token strin
 
 func TestDeviceLifecycle(t *testing.T) {
 	db, app := managementApp(t)
-	device := model.Device{RustdeskId: "test-device", Uuid: "test-uuid", StrategyGroupId: 42, UnattendedEnabled: true}
+	device := model.Device{RustdeskId: "test-device", Uuid: "test-uuid", StrategyGroupId: 42}
 	if _, err := db.Insert(&device); err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestDeviceLifecycle(t *testing.T) {
 	if _, err := db.ID(device.Id).Get(&saved); err != nil {
 		t.Fatal(err)
 	}
-	if !saved.Disabled || saved.StrategyGroupId != 42 || !saved.UnattendedEnabled {
+	if !saved.Disabled || saved.StrategyGroupId != 42 {
 		t.Fatal("state or policy lost")
 	}
 	cred := model.DeviceCredential{}

@@ -52,7 +52,7 @@ func (c *DevicesController) HandleDeviceDelete() mvc.Result {
 			return c.Error(nil, err.Error())
 		}
 	}
-	detail, err := json.Marshal(iris.Map{"alias": device.Alias, "group_id": device.StrategyGroupId, "profile_id": device.StrategyProfileId})
+	detail, err := json.Marshal(iris.Map{"alias": device.Alias, "group_id": device.StrategyGroupId})
 	if err != nil {
 		return c.Error(nil, err.Error())
 	}

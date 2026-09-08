@@ -55,38 +55,69 @@ func ResolveForDevice(db *xorm.Engine, device *model.Device) (Effective, error) 
 	if err != nil {
 		return Effective{}, err
 	}
-	rootCommand := device.RootCommand
+	effective := Effective{Revision: state.Revision, RootCommand: "auto", GroupSource: "none"}
+	if device.StrategyGroupId > 0 {
+		resolved, found, warning, resolveErr := resolveGroup(db, effective, device.StrategyGroupId, "assigned")
+		if resolveErr != nil {
+			return Effective{}, resolveErr
+		}
+		if found {
+			return resolved, nil
+		}
+		effective.GroupWarning = warning
+		return effective, nil
+	}
+	if state.DefaultGroupId > 0 {
+		resolved, found, warning, resolveErr := resolveGroup(db, effective, state.DefaultGroupId, "default")
+		if resolveErr != nil {
+			return Effective{}, resolveErr
+		}
+		if found {
+			return resolved, nil
+		}
+		if effective.GroupWarning == "" {
+			effective.GroupWarning = warning
+		}
+	}
+	return effective, nil
+}
+
+func resolveGroup(db *xorm.Engine, effective Effective, id int, source string) (Effective, bool, string, error) {
+	group := model.DeviceGroup{}
+	has, err := db.ID(id).Get(&group)
+	if err != nil {
+		return Effective{}, false, "", err
+	}
+	if !has {
+		return effective, false, source + "_group_missing", nil
+	}
+	if !group.Enabled {
+		return effective, false, source + "_group_disabled", nil
+	}
+	profile, has, err := loadEnabledProfile(db, group.ProfileId)
+	if err != nil {
+		return Effective{}, false, "", err
+	}
+	if !has {
+		return effective, false, source + "_profile_unavailable", nil
+	}
+	rootCommand := group.RootCommand
 	if rootCommand == "" {
 		rootCommand = "auto"
 	}
-	effective := Effective{
-		Revision:          state.Revision,
-		UnattendedEnabled: device.UnattendedEnabled,
-		RootCommand:       rootCommand,
+	effective.GroupID = group.Id
+	effective.GroupName = group.Name
+	effective.GroupSource = source
+	effective.UnattendedEnabled = group.UnattendedEnabled
+	effective.RootCommand = rootCommand
+	effective.PasswordCiphertext = group.PasswordCiphertext
+	effective.ProfileEnabled = true
+	effective.ProfileSource = source + ":" + group.Name
+	effective.Profile = ServerProfile{
+		ID: profile.Id, Name: profile.Name, IDServer: profile.IdServer,
+		RelayServer: profile.RelayServer, ServerKey: profile.ServerKey,
 	}
-	if profile, has, loadErr := loadEnabledProfile(db, device.StrategyProfileId); loadErr != nil {
-		return Effective{}, loadErr
-	} else if has {
-		return withProfile(effective, profile, "device"), nil
-	}
-	if device.StrategyGroupId > 0 {
-		group := model.DeviceGroup{}
-		if has, loadErr := db.ID(device.StrategyGroupId).Where("enabled = ?", true).Get(&group); loadErr != nil {
-			return Effective{}, loadErr
-		} else if has {
-			if profile, profileFound, profileErr := loadEnabledProfile(db, group.ProfileId); profileErr != nil {
-				return Effective{}, profileErr
-			} else if profileFound {
-				return withProfile(effective, profile, "group:"+group.Name), nil
-			}
-		}
-	}
-	if profile, has, loadErr := loadEnabledProfile(db, state.GlobalProfileId); loadErr != nil {
-		return Effective{}, loadErr
-	} else if has {
-		return withProfile(effective, profile, "global"), nil
-	}
-	return effective, nil
+	return effective, true, "", nil
 }
 
 func loadEnabledProfile(db *xorm.Engine, id int) (model.ServerProfile, bool, error) {
@@ -96,15 +127,4 @@ func loadEnabledProfile(db *xorm.Engine, id int) (model.ServerProfile, bool, err
 	}
 	has, err := db.ID(id).Where("enabled = ?", true).Get(&profile)
 	return profile, has, err
-}
-
-func withProfile(effective Effective, profile model.ServerProfile, source string) Effective {
-	effective.ProfileEnabled = true
-	effective.ProfileSource = source
-	effective.Profile = ServerProfile{
-		ID: profile.Id, Name: profile.Name, IDServer: profile.IdServer,
-		RelayServer: profile.RelayServer, ServerKey: profile.ServerKey,
-		PasswordCiphertext: profile.PasswordCiphertext,
-	}
-	return effective
 }

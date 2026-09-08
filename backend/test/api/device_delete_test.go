@@ -16,7 +16,7 @@ func TestDeviceDelete(t *testing.T) {
 			if _, err := db.Insert(&group, &profile); err != nil {
 				t.Fatal(err)
 			}
-			device := model.Device{RustdeskId: "delete-test", Disabled: true, Alias: "店铺", StrategyGroupId: group.Id, StrategyProfileId: profile.Id}
+			device := model.Device{RustdeskId: "delete-test", Disabled: true, Alias: "店铺", StrategyGroupId: group.Id}
 			if scenario == "active" {
 				device.Disabled = false
 			}

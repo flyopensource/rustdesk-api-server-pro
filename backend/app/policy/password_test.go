@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestProfilePasswordEncryptionRoundTrip(t *testing.T) {
+func TestDeviceGroupPasswordEncryptionRoundTrip(t *testing.T) {
 	key := base64.StdEncoding.EncodeToString([]byte("01234567890123456789012345678901"))
 	encrypted, err := EncryptPassword("secret-password", key)
 	if err != nil {

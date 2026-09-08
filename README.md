@@ -15,13 +15,14 @@ This README lists only changes and additions in this fork. Refer to the original
   - Devices use individual signing credentials for heartbeat, system information and subsequent policy retrieval, with signature verification, replay protection and encrypted policy delivery.
 
 - **Device groups and multiple server profiles**
-  - Manage complete profiles containing ID Server, Relay Server, Server Key and a permanent password in the Web UI.
-  - Select profiles at global, group or device scope. A device chooses one complete profile in device → enabled group → global order, without mixing individual fields.
-  - Change group or direct-profile assignments from the device list; moving a device does not clear its direct profile.
-  - Preview effective settings and their source. Permanent passwords are encrypted at rest and are not returned in plaintext by management queries.
+  - Server profiles contain reusable ID Server, Relay Server and Server Key connection settings.
+  - Each device group owns one server profile, its unattended setting, Root executor and encrypted permanent password as one atomic policy.
+  - Devices select only a group. Only unassigned devices use the single default group; an unavailable assigned group produces no managed policy and an explicit warning instead of silently falling back.
+  - Preview effective settings and their source. Permanent passwords are encrypted at rest and are not returned in plaintext by management queries or logs.
 
-- **Per-device unattended management**
-  - Configure unattended mode and its Root executor in the Web UI for the managed client to apply.
+- **Device-group unattended management**
+  - Configure unattended mode and its Root executor once for all devices in a group. `auto` probes `su` and then `testsu`; a known executor can be selected explicitly.
+  - Disabling unattended mode keeps the encrypted group password for later use but delivers an empty managed password to clients.
   - View Root, screen capture, accessibility, all-files access, service readiness and the latest reported result.
   - Private Android builds check and request storage permissions; missing permissions must not be reported as complete unattended success.
 

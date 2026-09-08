@@ -25,14 +25,15 @@ func TestBuildPolicyEnvelopeUsesResolvedPolicy(t *testing.T) {
 	cfg.ProvisioningSignSeed = base64.StdEncoding.EncodeToString(seed)
 	cfg.ProvisioningSecretKey = base64.StdEncoding.EncodeToString(secret[:])
 	cfg.ProvisioningKeyId = "test"
-	device := model.Device{RustdeskId: "123", Uuid: "uuid", UnattendedEnabled: false}
+	device := model.Device{RustdeskId: "123", Uuid: "uuid"}
 	password, err := devicepolicy.EncryptPassword("private-password", cfg.ProvisioningSecretKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	effective := devicepolicy.Effective{
 		Revision: 42, UnattendedEnabled: true, RootCommand: "/system/xbin/su", ProfileEnabled: true,
-		Profile: devicepolicy.ServerProfile{IDServer: "group.example", ServerKey: "server-key", PasswordCiphertext: password},
+		PasswordCiphertext: password,
+		Profile:            devicepolicy.ServerProfile{IDServer: "group.example", ServerKey: "server-key"},
 	}
 	encoded, err := buildPolicyEnvelope(&device, cfg, effective)
 	if err != nil {
@@ -60,5 +61,28 @@ func TestBuildPolicyEnvelopeUsesResolvedPolicy(t *testing.T) {
 	}
 	if policy.Revision != 42 || !policy.Android.Unattended.Enabled || policy.Android.Unattended.RootCommand != "/system/xbin/su" || policy.ServerProfile.IDServer != "group.example" || policy.ServerProfile.Key != "server-key" || policy.ServerProfile.PermanentPassword != "private-password" {
 		t.Fatalf("envelope did not use resolved policy: %+v", policy)
+	}
+
+	effective.UnattendedEnabled = false
+	encoded, err = buildPolicyEnvelope(&device, cfg, effective)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelopeJSON, _ = base64.StdEncoding.DecodeString(encoded)
+	if err = json.Unmarshal(envelopeJSON, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	nonceRaw, _ = base64.StdEncoding.DecodeString(envelope.Nonce)
+	ciphertext, _ = base64.StdEncoding.DecodeString(envelope.Ciphertext)
+	copy(nonce[:], nonceRaw)
+	plaintext, ok = secretbox.Open(nil, ciphertext, &nonce, &secret)
+	if !ok {
+		t.Fatal("failed to decrypt disabled policy")
+	}
+	if err = json.Unmarshal(plaintext, &policy); err != nil {
+		t.Fatal(err)
+	}
+	if policy.ServerProfile.PermanentPassword != "" {
+		t.Fatal("disabled unattended policy still delivered the device group password")
 	}
 }

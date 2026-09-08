@@ -150,7 +150,10 @@ declare namespace Api {
       group_id: number;
       group_name: string;
       group_enabled: boolean;
-      profile_assignment_id: number;
+      effective_group_id: number;
+      effective_group_name: string;
+      group_source: string;
+      group_warning: string;
       profile_enabled: boolean;
       profile_id: number;
       profile_name: string;
@@ -171,7 +174,30 @@ declare namespace Api {
       name: string;
       enabled: boolean;
       member_count: number;
+      default_coverage_count: number;
       profile_id: number;
+      profile_name: string;
+      profile_enabled: boolean;
+      unattended_enabled: boolean;
+      password_set: boolean;
+      root_command: string;
+      is_default: boolean;
+      configuration_complete: boolean;
+    };
+    type DeviceGroupInput = {
+      name: string;
+      enabled: boolean;
+      is_default: boolean;
+      profile_id: number;
+      unattended_enabled: boolean;
+      permanent_password?: string;
+      clear_password: boolean;
+      root_command: string;
+    };
+    type DeviceGroupsResult = {
+      groups: DeviceGroup[];
+      default_group_id: number;
+      unassigned_device_count: number;
     };
     type ServerProfile = {
       id: number;
@@ -179,26 +205,25 @@ declare namespace Api {
       id_server: string;
       relay_server: string;
       server_key: string;
-      password_set: boolean;
       enabled: boolean;
-      is_global_default: boolean;
       group_count: number;
-      device_count: number;
     };
     type ServerProfileInput = {
       name: string;
       id_server: string;
       relay_server: string;
       server_key: string;
-      permanent_password?: string;
       enabled: boolean;
     };
     type ServerProfilesResult = {
       profiles: ServerProfile[];
-      global_profile_id: number;
     };
     type ServerProfilePreview = {
       revision: number;
+      group_id: number;
+      group_name: string;
+      group_source: string;
+      group_warning: string;
       unattended_enabled: boolean;
       root_command: string;
       profile_enabled: boolean;

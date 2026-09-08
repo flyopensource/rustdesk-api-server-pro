@@ -20,19 +20,15 @@ export function fetchDevicesList(params: any) {
   return request<Api.Devices.DevicesList>({ url: '/devices/list', params });
 }
 
-export function updateDeviceUnattended(data: { id: number; enabled: boolean; root_command: string }) {
-  return request<{ policy_revision: number }>({ url: '/devices/unattended', method: 'put', data });
-}
-
 export function fetchDeviceGroups() {
-  return request<Api.Devices.DeviceGroup[]>({ url: '/devices/groups' });
+  return request<Api.Devices.DeviceGroupsResult>({ url: '/devices/groups' });
 }
 
-export function createDeviceGroup(data: Pick<Api.Devices.DeviceGroup, 'name' | 'enabled' | 'profile_id'>) {
+export function createDeviceGroup(data: Api.Devices.DeviceGroupInput) {
   return request<{ id: number }>({ url: '/devices/groups', method: 'post', data });
 }
 
-export function updateDeviceGroup(data: Pick<Api.Devices.DeviceGroup, 'id' | 'name' | 'enabled' | 'profile_id'>) {
+export function updateDeviceGroup(data: Api.Devices.DeviceGroupInput & { id: number }) {
   return request({ url: '/devices/groups', method: 'put', data });
 }
 
@@ -60,18 +56,6 @@ export function deleteServerProfile(id: number) {
   return request({ url: '/devices/server-profiles', method: 'delete', params: { id } });
 }
 
-export function updateDeviceServerProfile(id: number, profile_id: number) {
-  return request<Api.Devices.ServerProfilePreview>({
-    url: '/devices/server-profile',
-    method: 'put',
-    data: { id, profile_id }
-  });
-}
-
-export function updateGlobalServerProfile(profile_id: number) {
-  return request({ url: '/devices/global-server-profile', method: 'put', data: { profile_id } });
-}
-
 export function fetchServerProfilePreview(device_id: number) {
-  return request<Api.Devices.ServerProfilePreview>({ url: '/devices/server-profile-preview', params: { device_id } });
+  return request<Api.Devices.ServerProfilePreview>({ url: '/devices/policy-preview', params: { device_id } });
 }

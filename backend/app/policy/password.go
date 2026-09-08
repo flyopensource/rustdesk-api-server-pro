@@ -35,13 +35,13 @@ func DecryptPassword(value, encodedKey string) (string, error) {
 	}
 	decoded, err := base64.StdEncoding.DecodeString(value)
 	if err != nil || len(decoded) < 24+secretbox.Overhead {
-		return "", errors.New("invalid stored profile password")
+		return "", errors.New("invalid stored device group password")
 	}
 	var nonce [24]byte
 	copy(nonce[:], decoded[:24])
 	plaintext, ok := secretbox.Open(nil, decoded[24:], &nonce, &key)
 	if !ok {
-		return "", errors.New("failed to decrypt stored profile password")
+		return "", errors.New("failed to decrypt stored device group password")
 	}
 	return string(plaintext), nil
 }

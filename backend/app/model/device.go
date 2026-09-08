@@ -17,9 +17,6 @@ type Device struct {
 	Disabled               bool      `xorm:"'disabled' tinyint notnull default 0"`
 	Conns                  int       `xorm:"'conns' int"`
 	StrategyGroupId        int       `xorm:"'strategy_group_id' int notnull default 0 index"`
-	StrategyProfileId      int       `xorm:"'strategy_profile_id' int notnull default 0 index"`
-	UnattendedEnabled      bool      `xorm:"'unattended_enabled' tinyint notnull default 0"`
-	RootCommand            string    `xorm:"'root_command' varchar(255) notnull default 'auto'"`
 	PolicyRevision         int64     `xorm:"'policy_revision' bigint notnull default 0"`
 	AppliedRevision        int64     `xorm:"'applied_revision' bigint notnull default 0"`
 	UnattendedStatus       string    `xorm:"'unattended_status' varchar(32)"`
