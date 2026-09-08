@@ -359,7 +359,7 @@ const {
   showTotal: true,
   apiParams: { current: 1, size: 10, hostname: null, username: null, rustdesk_id: null, state: null, alias: null },
   columns: () => [
-    { key: 'id', title: 'ID', align: 'center' },
+    { key: 'id', width: 70, title: 'ID', align: 'center' },
     { key: 'rustdesk_id', width: 190, title: '连接 ID', align: 'center', render: row => (
       <NFlex vertical size={4} align="center">
         <span class="max-w-full break-all">{row.rustdesk_id}</span>
@@ -381,17 +381,17 @@ const {
         ) : null}
       </NFlex>
     ) },
-    { key: 'alias', title: '设备名称', align: 'center', render: row => (
-      <NFlex vertical align="center">
-        <span>{row.alias || '未命名'}</span>
+    { key: 'alias', width: 160, title: '设备名称', align: 'center', render: row => (
+      <NFlex vertical size={4} align="center">
+        <span class="max-w-full break-all">{row.alias || '未命名'}</span>
         <NButton size="small" onClick={() => editAlias(row)}>编辑名称</NButton>
       </NFlex>
     ) },
-    { key: 'hostname', title: $t('dataMap.device.hostname'), align: 'center' },
-    { key: 'username', title: $t('dataMap.device.username'), align: 'center' },
-    { key: 'version', title: $t('dataMap.device.version'), align: 'center' },
-    { key: 'disabled', title: '管理状态', align: 'center', render: row => (
-      <NFlex vertical align="center">
+    { key: 'hostname', width: 180, title: $t('dataMap.device.hostname'), align: 'center', ellipsis: { tooltip: true } },
+    { key: 'username', width: 140, title: $t('dataMap.device.username'), align: 'center', ellipsis: { tooltip: true } },
+    { key: 'version', width: 130, title: $t('dataMap.device.version'), align: 'center', ellipsis: { tooltip: true } },
+    { key: 'disabled', width: 130, title: '管理状态', align: 'center', render: row => (
+      <NFlex vertical size={4} align="center">
         <NTag type={row.disabled ? 'warning' : 'success'}>{row.disabled ? '已停用' : '正常'}</NTag>
         <span>{row.is_online ? '在线' : '离线'}</span>
         <NButton size="small" onClick={() => toggleDevice(row)}>{row.disabled ? '重新启用' : '停用'}</NButton>
@@ -400,12 +400,13 @@ const {
     ) },
     {
       key: 'group_name',
+      width: 190,
       title: '设备组',
       align: 'center',
       render: row => (
         <NFlex vertical size={4} align="center">
           <NSelect
-            class="w-160px"
+            class="w-full"
             value={row.group_id || 0}
             options={groupOptions.value}
             onUpdateValue={value => assignDeviceGroup(row, value)}
@@ -420,17 +421,18 @@ const {
     },
     {
       key: 'profile_name',
+      width: 220,
       title: '服务器配置',
       align: 'center',
       render: row => (
         <NFlex vertical size={4} align="center">
           <NSelect
-            class="w-180px"
+            class="w-full"
             value={row.profile_assignment_id || 0}
             options={deviceProfileOptions.value}
             onUpdateValue={value => assignDeviceProfile(row, value)}
           />
-          <span class="text-12px">
+          <span class="max-w-full break-all text-12px">
             {row.profile_name || '公共服务'} · {row.profile_source || '无配置'}
           </span>
           <NButton size="tiny" onClick={() => showPreview(row)}>
@@ -441,6 +443,7 @@ const {
     },
     {
       key: 'unattended_enabled',
+      width: 120,
       title: '无人值守',
       align: 'center',
       render: row => (
@@ -458,6 +461,7 @@ const {
     },
     {
       key: 'profile_connected',
+      width: 230,
       title: '应用状态',
       align: 'center',
       render: row => (
@@ -468,7 +472,7 @@ const {
           <span class="text-12px">
             {row.applied_revision || 0}/{row.policy_revision || 0}
           </span>
-          {row.unattended_error ? <span class="text-12px text-error">{row.unattended_error}</span> : null}
+          {row.unattended_error ? <span class="max-w-full break-all text-12px text-error">{row.unattended_error}</span> : null}
           <NTag size="small" type={row.all_files_access_ready ? 'success' : 'warning'}>
             文件权限：{row.all_files_access_ready ? '就绪' : '未就绪'}
           </NTag>
@@ -478,6 +482,7 @@ const {
     }
   ]
 });
+const tableScrollX = computed(() => columns.value.reduce((total, column) => total + Number(column.width || 0), 0));
 refreshDeviceList = getData;
 
 onMounted(loadStrategy);
@@ -507,12 +512,12 @@ onMounted(loadStrategy);
         :data="data"
         size="small"
         :flex-height="!appStore.isMobile"
-        :scroll-x="1180"
+        :scroll-x="tableScrollX"
         :loading="loading"
         remote
         :row-key="row => row.id"
         :pagination="mobilePagination"
-        class="sm:h-full"
+        class="device-table sm:h-full"
       />
     </NCard>
 
@@ -695,4 +700,8 @@ onMounted(loadStrategy);
   </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+.device-table :deep(.n-data-table-td) {
+  vertical-align: top;
+}
+</style>
