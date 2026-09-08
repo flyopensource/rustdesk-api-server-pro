@@ -395,7 +395,7 @@ const {
             {row.profile_active_source || '未上报'} / {row.profile_connected ? '已连接' : '未连接'}
           </NTag>
           <span class="text-12px">
-            {row.applied_revision || 0}/{row.policy_revision || 0}
+            {row.profile_applied_revision || 0}/{row.policy_revision || 0}
           </span>
           {row.unattended_error ? <span class="max-w-full break-all text-12px text-error">{row.unattended_error}</span> : null}
           <NTag size="small" type={row.all_files_access_ready ? 'success' : 'warning'}>
