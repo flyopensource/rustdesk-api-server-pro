@@ -588,14 +588,6 @@ declare namespace App {
         NoEmailAddress: string;
         VerificationCodeError: string;
         UUIDEmpty: string;
-        InvalidConnectionId: string;
-        DeviceNotFound: string;
-        DeviceDisabled: string;
-        DeviceNotManaged: string;
-        ConnectionIdAlreadyApplied: string;
-        ConnectionIdUnchanged: string;
-        ConnectionIdTaken: string;
-        ConnectionIdAddressBookConflict: string;
       };
     };
 

@@ -365,15 +365,7 @@ const local: App.I18n.Schema = {
     MailTemplateUpdateSuccess: 'Шаблон почты успешно изменен',
     NoEmailAddress: 'Адрес электронной почты не установлен',
     VerificationCodeError: 'Ошибка проверочного кода',
-    UUIDEmpty: 'UUID не может быть пустым',
-    InvalidConnectionId: 'Недопустимый формат идентификатора подключения',
-    DeviceNotFound: 'Устройство не существует',
-    DeviceDisabled: 'Устройство отключено',
-    DeviceNotManaged: 'Устройство не управляется',
-    ConnectionIdAlreadyApplied: 'Идентификатор подключения уже применен и не может быть изменен',
-    ConnectionIdUnchanged: 'Новый идентификатор совпадает с текущим',
-    ConnectionIdTaken: 'Идентификатор уже используется или ожидает назначения',
-    ConnectionIdAddressBookConflict: 'Идентификатор конфликтует с записью адресной книги'
+    UUIDEmpty: 'UUID не может быть пустым'
   }
 };
 

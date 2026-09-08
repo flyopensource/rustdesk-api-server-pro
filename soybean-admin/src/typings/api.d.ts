@@ -125,13 +125,6 @@ declare namespace Api {
     type Device = Common.CommonRecord<{
       rustdesk_id: string;
       alias: string;
-      requested_rustdesk_id: string;
-      connection_id_status: 'unassigned' | 'pending' | 'applied' | 'failed';
-      connection_id_revision: number;
-      connection_id_error: string;
-      connection_id_requested_at: string;
-      connection_id_applied_at: string;
-      managed: boolean;
       hostname: string;
       username: string;
       uuid: string;
