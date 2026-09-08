@@ -95,29 +95,6 @@ func TestDeviceRegistrationAndSignedHeartbeat(t *testing.T) {
 		t.Fatalf("unexpected registration response: %s", registrationResponse.Body.String())
 	}
 	deviceID := registrationResult.DeviceID
-	savedDevice := model.Device{}
-	if found, findErr := engine.ID(deviceID).Get(&savedDevice); findErr != nil || !found {
-		t.Fatalf("failed to load device: found=%v err=%v", found, findErr)
-	}
-	if savedDevice.ConnectionIdStatus != model.ConnectionIdUnassigned {
-		t.Fatalf("unexpected initial connection id status: %q", savedDevice.ConnectionIdStatus)
-	}
-
-	changedIDMessage := controller.BuildRegistrationMessage("changed-device", "device-uuid", publicKey, timestamp)
-	changedIDRegistration := map[string]any{
-		"id":               "changed-device",
-		"uuid":             "device-uuid",
-		"public_key":       base64.StdEncoding.EncodeToString(publicKey),
-		"timestamp":        timestamp,
-		"signature":        base64.StdEncoding.EncodeToString(ed25519.Sign(privateKey, changedIDMessage)),
-		"enrollment_proof": base64.StdEncoding.EncodeToString(registrationProof(changedIDMessage, enrollmentKey)),
-	}
-	if response := postJSON(t, application, "/api/device/register", changedIDRegistration); response.Code != iris.StatusConflict {
-		t.Fatalf("unexpected changed id registration status = %d, body = %s", response.Code, response.Body.String())
-	}
-	if count, countErr := engine.Count(new(model.Device)); countErr != nil || count != 1 {
-		t.Fatalf("changed id created duplicate device: count=%d err=%v", count, countErr)
-	}
 
 	payload, err := json.Marshal(map[string]any{
 		"id":          "123456789",

@@ -57,7 +57,7 @@ func TestAdminServerProfilesAssignmentsAndPreview(t *testing.T) {
 	defer db.Close()
 	if err = db.Sync(
 		new(model.User), new(model.AuthToken), new(model.Device), new(model.DeviceGroup),
-		new(model.DeviceCredential), new(model.ServerProfile), new(model.StrategyState),
+		new(model.ServerProfile), new(model.StrategyState),
 	); err != nil {
 		t.Fatal(err)
 	}

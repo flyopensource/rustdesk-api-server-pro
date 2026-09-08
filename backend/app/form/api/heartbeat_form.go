@@ -9,15 +9,6 @@ type HeartbeatForm struct {
 	Conns               []int                    `json:"conns"`
 	UnattendedStatus    *UnattendedStatusForm    `json:"unattended_status,omitempty"`
 	ServerProfileStatus *ServerProfileStatusForm `json:"server_profile_status,omitempty"`
-	ConnectionIdStatus  *ConnectionIdStatusForm  `json:"connection_id_status,omitempty"`
-}
-
-type ConnectionIdStatusForm struct {
-	RequestedId string `json:"requested_id"`
-	ActiveId    string `json:"active_id"`
-	Status      string `json:"status"`
-	Revision    int64  `json:"revision"`
-	LastError   string `json:"last_error"`
 }
 
 type ServerProfileStatusForm struct {

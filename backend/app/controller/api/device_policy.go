@@ -21,14 +21,9 @@ type unattendedPolicy struct {
 	IssuedAt  int64 `json:"issued_at"`
 	ExpiresAt int64 `json:"expires_at"`
 	Target    struct {
-		DeviceID int    `json:"device_id"`
-		UUID     string `json:"uuid"`
+		RustdeskID string `json:"rustdesk_id"`
+		UUID       string `json:"uuid"`
 	} `json:"target"`
-	ConnectionID struct {
-		RequestedID string `json:"requested_id"`
-		Status      string `json:"status"`
-		Revision    int64  `json:"revision"`
-	} `json:"connection_id"`
 	Android struct {
 		Unattended struct {
 			Enabled     bool   `json:"enabled"`
@@ -63,14 +58,9 @@ func buildPolicyEnvelope(device *model.Device, cfg *config.ServerConfig, effecti
 		return "", errors.New("provisioning encryption key is not configured")
 	}
 	now := time.Now().Unix()
-	policy := unattendedPolicy{Version: 2, Revision: effective.Revision, IssuedAt: now, ExpiresAt: now + 7*24*60*60}
-	policy.Target.DeviceID = device.Id
+	policy := unattendedPolicy{Version: 1, Revision: effective.Revision, IssuedAt: now, ExpiresAt: now + 7*24*60*60}
+	policy.Target.RustdeskID = device.RustdeskId
 	policy.Target.UUID = device.Uuid
-	if device.ConnectionIdStatus == model.ConnectionIdPending {
-		policy.ConnectionID.RequestedID = device.RequestedRustdeskId
-		policy.ConnectionID.Status = model.ConnectionIdPending
-		policy.ConnectionID.Revision = device.ConnectionIdRevision
-	}
 	policy.Android.Unattended.Enabled = effective.UnattendedEnabled
 	policy.Android.Unattended.RootCommand = effective.RootCommand
 	policy.ServerProfile.Enabled = effective.ProfileEnabled
