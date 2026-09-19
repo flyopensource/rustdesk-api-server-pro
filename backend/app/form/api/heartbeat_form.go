@@ -9,6 +9,14 @@ type HeartbeatForm struct {
 	Conns               []int                    `json:"conns"`
 	UnattendedStatus    *UnattendedStatusForm    `json:"unattended_status,omitempty"`
 	ServerProfileStatus *ServerProfileStatusForm `json:"server_profile_status,omitempty"`
+	PasswordStatus      *PasswordStatusForm      `json:"password_status,omitempty"`
+}
+
+type PasswordStatusForm struct {
+	AppliedRevision      int64  `json:"applied_revision"`
+	Status               string `json:"status"`
+	PermanentPasswordSet bool   `json:"permanent_password_set"`
+	LastError            string `json:"last_error"`
 }
 
 type ServerProfileStatusForm struct {

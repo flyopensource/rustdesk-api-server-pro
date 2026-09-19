@@ -15,3 +15,19 @@ type SignedDeviceRequestForm struct {
 	Payload   string `json:"payload"`
 	Signature string `json:"signature"`
 }
+
+type DesktopDeviceRegistrationForm struct {
+	Version       int    `json:"version"`
+	RequestId     string `json:"request_id"`
+	Token         string `json:"token"`
+	RustdeskId    string `json:"id"`
+	Uuid          string `json:"uuid"`
+	Hostname      string `json:"hostname"`
+	Os            string `json:"os"`
+	Arch          string `json:"arch"`
+	ClientVersion string `json:"client_version"`
+	SignPublicKey string `json:"sign_public_key"`
+	BoxPublicKey  string `json:"box_public_key"`
+	Timestamp     int64  `json:"timestamp"`
+	Signature     string `json:"signature"`
+}

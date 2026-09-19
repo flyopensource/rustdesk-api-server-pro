@@ -1,7 +1,9 @@
 package api
 
 import (
+	"bytes"
 	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"rustdesk-api-server-pro/app/model"
@@ -9,6 +11,7 @@ import (
 	"rustdesk-api-server-pro/config"
 	"testing"
 
+	"golang.org/x/crypto/nacl/box"
 	"golang.org/x/crypto/nacl/secretbox"
 )
 
@@ -85,4 +88,82 @@ func TestBuildPolicyEnvelopeUsesResolvedPolicy(t *testing.T) {
 	if policy.ServerProfile.PermanentPassword != "" {
 		t.Fatal("disabled unattended policy still delivered the device group password")
 	}
+}
+
+func TestBuildDesktopPolicyEnvelopeEncryptsOnlyDesktopPolicy(t *testing.T) {
+	seed := make([]byte, ed25519.SeedSize)
+	for i := range seed {
+		seed[i] = byte(i + 9)
+	}
+	boxPublicKey, boxSecretKey, err := box.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.GetDefaultServerConfig()
+	cfg.ProvisioningSignSeed = base64.StdEncoding.EncodeToString(seed)
+	cfg.ProvisioningSecretKey = base64.StdEncoding.EncodeToString(make([]byte, 32))
+	cfg.ProvisioningKeyId = "desktop-test"
+	password, err := devicepolicy.EncryptPassword("desktop-password", cfg.ProvisioningSecretKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := model.Device{Id: 17, RustdeskId: "123456789", Uuid: "desktop-uuid"}
+	credential := model.DeviceCredential{BoxPublicKey: base64.StdEncoding.EncodeToString(boxPublicKey[:])}
+	effective := devicepolicy.Effective{
+		Revision: 88, GroupID: 3, UnattendedEnabled: true, PasswordCiphertext: password,
+		ProfileEnabled: true,
+		Profile: devicepolicy.ServerProfile{
+			IDServer: "id.example.com", RelayServer: "relay.example.com", ServerKey: "server-key",
+		},
+	}
+	encoded, err := buildDesktopPolicyEnvelope(&device, &credential, cfg, effective)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelopeJSON, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope desktopPolicyEnvelope
+	if err = json.Unmarshal(envelopeJSON, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	ciphertext, err := base64.StdEncoding.DecodeString(envelope.Ciphertext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicKey := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
+	if !ed25519.Verify(publicKey, BuildDesktopPolicySignatureMessage(
+		envelope.Version, envelope.Purpose, envelope.KeyID, envelope.DeviceID, envelope.Revision, ciphertext,
+	), mustDecodeBase64(t, envelope.Signature)) {
+		t.Fatal("desktop policy signature is invalid")
+	}
+	plaintext, ok := box.OpenAnonymous(nil, ciphertext, boxPublicKey, boxSecretKey)
+	if !ok {
+		t.Fatal("failed to decrypt desktop policy")
+	}
+	var policy desktopPolicy
+	if err = json.Unmarshal(plaintext, &policy); err != nil {
+		t.Fatal(err)
+	}
+	if policy.Revision != 88 || policy.Target.DeviceID != 17 ||
+		policy.Desktop.Unattended.PasswordAction != "set" ||
+		policy.Desktop.Unattended.PermanentPassword != "desktop-password" {
+		t.Fatalf("unexpected desktop policy: %+v", policy)
+	}
+	if string(plaintext) == "" || json.Valid(plaintext) == false {
+		t.Fatal("desktop policy plaintext is not valid JSON")
+	}
+	if bytes.Contains(plaintext, []byte("root_command")) {
+		t.Fatal("desktop policy leaked Android root configuration")
+	}
+}
+
+func mustDecodeBase64(t *testing.T, value string) []byte {
+	t.Helper()
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return decoded
 }

@@ -23,6 +23,7 @@ func (c *DevicesController) BeforeActivation(b mvc.BeforeActivation) {
 	b.Handle("PUT", "/devices/alias", "HandleDeviceAlias")
 	b.Handle("DELETE", "/devices/record", "HandleDeviceDelete")
 	registerPolicyRoutes(b)
+	registerDesktopEnrollmentRoutes(b)
 }
 
 func (c *DevicesController) HandleList() mvc.Result {

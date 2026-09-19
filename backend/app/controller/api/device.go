@@ -163,44 +163,44 @@ func (c *DeviceController) PostRegister() mvc.Result {
 	}}
 }
 
-func (c *DeviceController) authenticateRequest(form *api.SignedDeviceRequestForm) ([]byte, *model.Device, mvc.Result) {
+func (c *DeviceController) authenticateRequest(form *api.SignedDeviceRequestForm) ([]byte, *model.Device, *model.DeviceCredential, mvc.Result) {
 	if form.DeviceId <= 0 || form.Sequence <= 0 {
-		return nil, nil, responseError(iris.StatusBadRequest, "invalid device request")
+		return nil, nil, nil, responseError(iris.StatusBadRequest, "invalid device request")
 	}
 	payload, err := base64.StdEncoding.DecodeString(form.Payload)
 	if err != nil || len(payload) == 0 || len(payload) > 256*1024 {
-		return nil, nil, responseError(iris.StatusBadRequest, "invalid device payload")
+		return nil, nil, nil, responseError(iris.StatusBadRequest, "invalid device payload")
 	}
 	signature, err := decodeBase64(form.Signature, ed25519.SignatureSize)
 	if err != nil {
-		return nil, nil, responseError(iris.StatusBadRequest, "invalid device signature")
+		return nil, nil, nil, responseError(iris.StatusBadRequest, "invalid device signature")
 	}
 	credential := model.DeviceCredential{}
 	has, err := c.Db.Where("device_id = ? AND enabled = ?", form.DeviceId, true).Get(&credential)
 	if err != nil || !has {
-		return nil, nil, responseError(iris.StatusUnauthorized, "unknown device credential")
+		return nil, nil, nil, responseError(iris.StatusUnauthorized, "unknown device credential")
 	}
 	publicKey, err := decodeBase64(credential.PublicKey, ed25519.PublicKeySize)
 	if err != nil || !ed25519.Verify(publicKey, BuildDeviceRequestMessage(form.DeviceId, form.Sequence, payload), signature) {
-		return nil, nil, responseError(iris.StatusUnauthorized, "device signature rejected")
+		return nil, nil, nil, responseError(iris.StatusUnauthorized, "device signature rejected")
 	}
 	affected, err := c.Db.Where("device_id = ? AND enabled = ? AND last_seq < ?", form.DeviceId, true, form.Sequence).
 		Cols("last_seq").Update(&model.DeviceCredential{LastSeq: form.Sequence})
 	if err != nil {
-		return nil, nil, responseError(iris.StatusInternalServerError, "failed to update device sequence")
+		return nil, nil, nil, responseError(iris.StatusInternalServerError, "failed to update device sequence")
 	}
 	if affected != 1 {
-		return nil, nil, responseError(iris.StatusConflict, "device request replayed")
+		return nil, nil, nil, responseError(iris.StatusConflict, "device request replayed")
 	}
 	device := model.Device{}
 	has, err = c.Db.ID(form.DeviceId).Get(&device)
 	if err != nil || !has {
-		return nil, nil, responseError(iris.StatusUnauthorized, "registered device not found")
+		return nil, nil, nil, responseError(iris.StatusUnauthorized, "registered device not found")
 	}
 	if device.Disabled {
-		return nil, nil, responseError(iris.StatusForbidden, "device disabled")
+		return nil, nil, nil, responseError(iris.StatusForbidden, "device disabled")
 	}
-	return payload, &device, nil
+	return payload, &device, &credential, nil
 }
 
 func (c *DeviceController) PostHeartbeat() mvc.Result {
@@ -208,7 +208,7 @@ func (c *DeviceController) PostHeartbeat() mvc.Result {
 	if err := c.Ctx.ReadJSON(&request); err != nil {
 		return responseError(iris.StatusBadRequest, "invalid signed request")
 	}
-	payload, device, failure := c.authenticateRequest(&request)
+	payload, device, credential, failure := c.authenticateRequest(&request)
 	if failure != nil {
 		return failure
 	}
@@ -255,6 +255,23 @@ func (c *DeviceController) PostHeartbeat() mvc.Result {
 			ProfileReportedAt:      time.Now(),
 		})
 	}
+	if status := form.PasswordStatus; status != nil && credential.RegistrationType == "desktop_token" {
+		if len(status.LastError) > 255 {
+			status.LastError = status.LastError[:255]
+		}
+		switch status.Status {
+		case "unchanged", "applying", "success", "cleared", "failed":
+		default:
+			status.Status = ""
+		}
+		_, _ = c.Db.ID(device.Id).Cols(
+			"password_applied_revision", "password_apply_status", "permanent_password_set", "password_error", "password_reported_at",
+		).Update(&model.Device{
+			PasswordAppliedRevision: status.AppliedRevision, PasswordApplyStatus: status.Status,
+			PermanentPasswordSet: status.PermanentPasswordSet, PasswordError: status.LastError,
+			PasswordReportedAt: time.Now(),
+		})
+	}
 	capability := versionhelper.ResolveCapability(NormalizeReportedVersion(form.Version, form.Ver))
 	strategy := iris.Map{"translate_mode": capability.TranslateMode}
 	effective, err := devicepolicy.ResolveForDevice(c.Db, device)
@@ -263,11 +280,19 @@ func (c *DeviceController) PostHeartbeat() mvc.Result {
 	}
 	response := iris.Map{"modified_at": effective.Revision, "strategy": strategy}
 	if effective.Revision != form.ModifiedAt {
-		envelope, err := buildPolicyEnvelope(device, c.ServerConfig, effective)
+		var envelope string
+		var envelopeKey string
+		if credential.RegistrationType == "desktop_token" {
+			envelope, err = buildDesktopPolicyEnvelope(device, credential, c.ServerConfig, effective)
+			envelopeKey = "desktop_provisioning"
+		} else {
+			envelope, err = buildPolicyEnvelope(device, c.ServerConfig, effective)
+			envelopeKey = "android_provisioning"
+		}
 		if err != nil {
 			return responseError(iris.StatusServiceUnavailable, err.Error())
 		}
-		strategy["extra"] = iris.Map{"android_provisioning": envelope}
+		strategy["extra"] = iris.Map{envelopeKey: envelope}
 		response["strategy"] = strategy
 	}
 	return mvc.Response{Object: response}
@@ -278,7 +303,7 @@ func (c *DeviceController) PostSysinfo() mvc.Result {
 	if err := c.Ctx.ReadJSON(&request); err != nil {
 		return responseError(iris.StatusBadRequest, "invalid signed request")
 	}
-	payload, device, failure := c.authenticateRequest(&request)
+	payload, device, _, failure := c.authenticateRequest(&request)
 	if failure != nil {
 		return failure
 	}
