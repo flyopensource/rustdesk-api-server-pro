@@ -148,7 +148,11 @@ func TestBuildDesktopPolicyEnvelopeEncryptsOnlyDesktopPolicy(t *testing.T) {
 	}
 	if policy.Revision != 88 || policy.Target.DeviceID != 17 ||
 		policy.Desktop.Unattended.PasswordAction != "set" ||
-		policy.Desktop.Unattended.PermanentPassword != "desktop-password" {
+		policy.Desktop.Unattended.PermanentPassword != "desktop-password" ||
+		!policy.Desktop.ServerProfile.Enabled ||
+		policy.Desktop.ServerProfile.IDServer != "id.example.com" ||
+		policy.Desktop.ServerProfile.RelayServer != "relay.example.com" ||
+		policy.Desktop.ServerProfile.Key != "server-key" {
 		t.Fatalf("unexpected desktop policy: %+v", policy)
 	}
 	if string(plaintext) == "" || json.Valid(plaintext) == false {
@@ -156,6 +160,25 @@ func TestBuildDesktopPolicyEnvelopeEncryptsOnlyDesktopPolicy(t *testing.T) {
 	}
 	if bytes.Contains(plaintext, []byte("root_command")) {
 		t.Fatal("desktop policy leaked Android root configuration")
+	}
+
+	effective.ProfileEnabled = false
+	encoded, err = buildDesktopPolicyEnvelope(&device, &credential, cfg, effective)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelopeJSON, _ = base64.StdEncoding.DecodeString(encoded)
+	if err = json.Unmarshal(envelopeJSON, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	ciphertext, _ = base64.StdEncoding.DecodeString(envelope.Ciphertext)
+	plaintext, ok = box.OpenAnonymous(nil, ciphertext, boxPublicKey, boxSecretKey)
+	if !ok || json.Unmarshal(plaintext, &policy) != nil {
+		t.Fatal("failed to decode disabled desktop profile policy")
+	}
+	if policy.Desktop.ServerProfile.Enabled || policy.Desktop.ServerProfile.IDServer != "" ||
+		policy.Desktop.ServerProfile.RelayServer != "" || policy.Desktop.ServerProfile.Key != "" {
+		t.Fatalf("disabled desktop profile leaked server fields: %+v", policy.Desktop.ServerProfile)
 	}
 }
 

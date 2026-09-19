@@ -65,6 +65,12 @@ type desktopPolicy struct {
 			PasswordAction    string `json:"password_action"`
 			PermanentPassword string `json:"permanent_password"`
 		} `json:"unattended"`
+		ServerProfile struct {
+			Enabled     bool   `json:"enabled"`
+			IDServer    string `json:"id_server"`
+			RelayServer string `json:"relay_server"`
+			Key         string `json:"key"`
+		} `json:"server_profile"`
 	} `json:"desktop"`
 }
 
@@ -106,6 +112,12 @@ func buildDesktopPolicyEnvelope(device *model.Device, credential *model.DeviceCr
 	policy.Target.DeviceID = device.Id
 	policy.Target.RustdeskID = device.RustdeskId
 	policy.Target.UUID = device.Uuid
+	policy.Desktop.ServerProfile.Enabled = effective.ProfileEnabled
+	if effective.ProfileEnabled {
+		policy.Desktop.ServerProfile.IDServer = effective.Profile.IDServer
+		policy.Desktop.ServerProfile.RelayServer = effective.Profile.RelayServer
+		policy.Desktop.ServerProfile.Key = effective.Profile.ServerKey
+	}
 	policy.Desktop.Unattended.PasswordAction = "unchanged"
 	if effective.GroupID > 0 && (!effective.UnattendedEnabled || effective.PasswordCiphertext == "") {
 		policy.Desktop.Unattended.PasswordAction = "clear"

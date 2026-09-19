@@ -195,6 +195,24 @@ function passwordStatusType(status: string): 'success' | 'warning' | 'error' | '
   return 'default';
 }
 
+function profileStatusLabel(status: string) {
+  return {
+    idle: '等待应用',
+    applying: '应用中',
+    success: '应用成功',
+    failed: '失败',
+    rolled_back: '已回滚',
+    disabled: '已停用'
+  }[status] || '未上报';
+}
+
+function profileStatusType(status: string): 'success' | 'warning' | 'error' | 'info' | 'default' {
+  if (status === 'success' || status === 'disabled') return 'success';
+  if (status === 'failed' || status === 'rolled_back') return 'error';
+  if (status === 'applying') return 'info';
+  return 'default';
+}
+
 async function loadEnrollmentTokens() {
   enrollmentTokensLoading.value = true;
   try {
@@ -519,7 +537,22 @@ const {
       width: 230,
       title: '应用状态',
       align: 'center',
-      render: row => (
+      render: row => row.registration_type === 'desktop_token' ? (
+        <NFlex vertical size={4} align="center">
+          <NTag size="small" type={profileStatusType(row.profile_apply_status)}>
+            {profileStatusLabel(row.profile_apply_status)} / {row.profile_active_source || '未上报'}
+          </NTag>
+          <NTag size="small" type={row.profile_connected ? 'success' : 'default'}>
+            {row.profile_connected ? '已连接' : '未连接'}
+          </NTag>
+          <span class="text-12px">
+            版本：{row.profile_received_revision || 0}/{row.profile_applied_revision || 0}/{row.profile_failed_revision || 0}
+          </span>
+          {row.profile_fingerprint ? <span class="text-12px">指纹：{row.profile_fingerprint}</span> : null}
+          {row.profile_error ? <span class="max-w-full break-all text-12px text-error">{row.profile_error}</span> : null}
+          <span class="text-12px">{formatDate(row.profile_reported_at)}</span>
+        </NFlex>
+      ) : (
         <NFlex vertical size={4} align="center">
           <NTag size="small" type={row.profile_connected ? 'success' : 'default'}>
             {row.profile_active_source || '未上报'} / {row.profile_connected ? '已连接' : '未连接'}

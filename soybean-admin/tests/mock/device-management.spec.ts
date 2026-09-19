@@ -7,7 +7,11 @@ test('device alias, cancellation, state and deletion with mocked APIs only', asy
     group_source: 'none', group_warning: '', profile_name: '', profile_id_server: '', profile_password_set: false,
     all_files_access_ready: false, unattended_enabled: false, root_command: 'auto', platform: 'desktop', arch: 'x86_64',
     registration_type: 'desktop_token', password_apply_status: 'success', password_applied_revision: 9,
-    permanent_password_set: true, password_error: '', password_reported_at: '2026-09-19T08:00:00Z', policy_revision: 9
+    permanent_password_set: true, password_error: '', password_reported_at: '2026-09-19T08:00:00Z', policy_revision: 9,
+    profile_received_revision: 9, profile_applied_revision: 8, profile_failed_revision: 9,
+    profile_apply_status: 'rolled_back', profile_active_source: 'managed', profile_connected: true,
+    profile_fingerprint: '0123456789abcdef0123456789abcdef', profile_error: 'profile_connect_timeout',
+    profile_reported_at: '2026-09-19T08:00:00Z'
   };
   const group = {
     id: 2, name: 'android-board', enabled: true, is_default: true, member_count: 0, default_coverage_count: 1,
@@ -71,6 +75,8 @@ test('device alias, cancellation, state and deletion with mocked APIs only', asy
   await expect(page.getByRole('button', { name: '编辑别名', exact: true })).toBeVisible();
   await expect(page.getByText('桌面令牌注册', { exact: true })).toBeVisible();
   await expect(page.getByText('下发成功', { exact: true })).toBeVisible();
+  await expect(page.getByText('已回滚 / managed', { exact: true })).toBeVisible();
+  await expect(page.getByText('profile_connect_timeout', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '编辑别名', exact: true }).click();
   const aliasModal = page.locator('.n-modal').filter({ hasText: '编辑设备别名' });
   await expect(aliasModal).toBeVisible();

@@ -30,9 +30,14 @@ type Device struct {
 	ServiceRunning          bool      `xorm:"'service_running' tinyint"`
 	UnattendedError         string    `xorm:"'unattended_error' varchar(255)"`
 	UnattendedReportedAt    time.Time `xorm:"'unattended_reported_at' datetime"`
+	ProfileReceivedRevision int64     `xorm:"'profile_received_revision' bigint notnull default 0"`
 	ProfileAppliedRevision  int64     `xorm:"'profile_applied_revision' bigint notnull default 0"`
+	ProfileFailedRevision   int64     `xorm:"'profile_failed_revision' bigint notnull default 0"`
+	ProfileApplyStatus      string    `xorm:"'profile_apply_status' varchar(32)"`
 	ProfileActiveSource     string    `xorm:"'profile_active_source' varchar(32)"`
 	ProfileConnected        bool      `xorm:"'profile_connected' tinyint"`
+	ProfileFingerprint      string    `xorm:"'profile_fingerprint' varchar(64)"`
+	ProfileError            string    `xorm:"'profile_error' varchar(255)"`
 	ProfileReportedAt       time.Time `xorm:"'profile_reported_at' datetime"`
 	PasswordAppliedRevision int64     `xorm:"'password_applied_revision' bigint notnull default 0"`
 	PasswordApplyStatus     string    `xorm:"'password_apply_status' varchar(32)"`

@@ -42,7 +42,10 @@ func TestDesktopRegistrationAndEncryptedFixedPasswordPolicy(t *testing.T) {
 	cfg.ProvisioningSignSeed = base64.StdEncoding.EncodeToString(seed)
 	cfg.ProvisioningSecretKey = base64.StdEncoding.EncodeToString(make([]byte, 32))
 	cfg.ProvisioningKeyId = "desktop-integration"
-	profile := model.ServerProfile{Name: "desktop", IdServer: "id.example.com", Enabled: true}
+	profile := model.ServerProfile{
+		Name: "desktop", IdServer: "id.example.com", RelayServer: "relay.example.com",
+		ServerKey: "server-key", Enabled: true,
+	}
 	if _, err = db.Insert(&profile); err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +158,9 @@ func TestDesktopRegistrationAndEncryptedFixedPasswordPolicy(t *testing.T) {
 		t.Fatalf("unexpected strategy envelope: %s", heartbeatResponse.Body.String())
 	}
 	policy := decryptDesktopPolicyForTest(t, encodedEnvelope, registered.PolicyVerifyPublicKey, boxPublicKey, boxSecretKey)
-	if policy.PasswordAction != "set" || policy.PermanentPassword != "managed-password" || policy.HasRootCommand {
+	if policy.PasswordAction != "set" || policy.PermanentPassword != "managed-password" || policy.HasRootCommand ||
+		!policy.ProfileEnabled || policy.IDServer != "id.example.com" ||
+		policy.RelayServer != "relay.example.com" || policy.ServerKey != "server-key" {
 		t.Fatalf("unexpected desktop policy: %+v", policy)
 	}
 
@@ -163,6 +168,11 @@ func TestDesktopRegistrationAndEncryptedFixedPasswordPolicy(t *testing.T) {
 		"id": "987654321", "uuid": "desktop-uuid", "version": "1.4.6", "modified_at": response.ModifiedAt,
 		"password_status": map[string]any{
 			"applied_revision": response.ModifiedAt, "status": "success", "permanent_password_set": true, "last_error": "",
+		},
+		"server_profile_status": map[string]any{
+			"received_revision": response.ModifiedAt, "applied_revision": response.ModifiedAt,
+			"failed_revision": 0, "apply_status": "success", "active_source": "managed",
+			"connected": true, "fingerprint": "0123456789abcdef0123456789abcdef", "last_error": "",
 		},
 	})
 	if err != nil {
@@ -182,6 +192,11 @@ func TestDesktopRegistrationAndEncryptedFixedPasswordPolicy(t *testing.T) {
 	}
 	if saved.Platform != "desktop" || saved.PasswordApplyStatus != "success" || !saved.PermanentPasswordSet || saved.PasswordAppliedRevision != 41 {
 		t.Fatalf("desktop password status was not stored: %+v", saved)
+	}
+	if saved.ProfileReceivedRevision != 41 || saved.ProfileAppliedRevision != 41 ||
+		saved.ProfileApplyStatus != "success" || saved.ProfileActiveSource != "managed" ||
+		!saved.ProfileConnected || saved.ProfileFingerprint != "0123456789abcdef0123456789abcdef" {
+		t.Fatalf("desktop server profile status was not stored: %+v", saved)
 	}
 
 	if _, err = db.ID(group.Id).Cols("password_ciphertext").Update(&model.DeviceGroup{}); err != nil {
@@ -243,6 +258,10 @@ func TestDesktopRegistrationAndEncryptedFixedPasswordPolicy(t *testing.T) {
 type desktopPolicyForTest struct {
 	PasswordAction    string
 	PermanentPassword string
+	ProfileEnabled    bool
+	IDServer          string
+	RelayServer       string
+	ServerKey         string
 	HasRootCommand    bool
 }
 
@@ -288,6 +307,12 @@ func decryptDesktopPolicyForTest(t *testing.T, encoded, verifyKey string, boxPub
 				PasswordAction    string `json:"password_action"`
 				PermanentPassword string `json:"permanent_password"`
 			} `json:"unattended"`
+			ServerProfile struct {
+				Enabled     bool   `json:"enabled"`
+				IDServer    string `json:"id_server"`
+				RelayServer string `json:"relay_server"`
+				Key         string `json:"key"`
+			} `json:"server_profile"`
 		} `json:"desktop"`
 	}
 	if err = json.Unmarshal(plaintext, &policy); err != nil {
@@ -301,6 +326,10 @@ func decryptDesktopPolicyForTest(t *testing.T, encoded, verifyKey string, boxPub
 	return desktopPolicyForTest{
 		PasswordAction:    policy.Desktop.Unattended.PasswordAction,
 		PermanentPassword: policy.Desktop.Unattended.PermanentPassword,
+		ProfileEnabled:    policy.Desktop.ServerProfile.Enabled,
+		IDServer:          policy.Desktop.ServerProfile.IDServer,
+		RelayServer:       policy.Desktop.ServerProfile.RelayServer,
+		ServerKey:         policy.Desktop.ServerProfile.Key,
 		HasRootCommand:    rootAtTop || bytes.Contains(plaintext, []byte("root_command")),
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"math"
@@ -245,14 +246,41 @@ func (c *DeviceController) PostHeartbeat() mvc.Result {
 		}
 	}
 	if status := form.ServerProfileStatus; status != nil {
-		if status.ActiveSource != "manual" && status.ActiveSource != "provisioned" && status.ActiveSource != "waiting" && status.ActiveSource != "public" {
+		if status.ActiveSource != "manual" && status.ActiveSource != "provisioned" && status.ActiveSource != "waiting" && status.ActiveSource != "public" && status.ActiveSource != "managed" && status.ActiveSource != "manual_fallback" && status.ActiveSource != "none" {
 			status.ActiveSource = ""
 		}
-		_, _ = c.Db.ID(device.Id).Cols("profile_applied_revision", "profile_active_source", "profile_connected", "profile_reported_at").Update(&model.Device{
-			ProfileAppliedRevision: status.PolicyRevision,
-			ProfileActiveSource:    status.ActiveSource,
-			ProfileConnected:       status.Connected,
-			ProfileReportedAt:      time.Now(),
+		switch status.ApplyStatus {
+		case "", "idle", "applying", "success", "failed", "rolled_back", "disabled":
+		default:
+			status.ApplyStatus = ""
+		}
+		if decoded, decodeErr := hex.DecodeString(status.Fingerprint); status.Fingerprint != "" && (decodeErr != nil || len(decoded) != 16) {
+			status.Fingerprint = ""
+		}
+		if len(status.LastError) > 255 {
+			status.LastError = status.LastError[:255]
+		}
+		appliedRevision := status.AppliedRevision
+		if appliedRevision == 0 {
+			appliedRevision = status.PolicyRevision
+		}
+		receivedRevision := status.ReceivedRevision
+		if receivedRevision == 0 {
+			receivedRevision = appliedRevision
+		}
+		_, _ = c.Db.ID(device.Id).Cols(
+			"profile_received_revision", "profile_applied_revision", "profile_failed_revision", "profile_apply_status",
+			"profile_active_source", "profile_connected", "profile_fingerprint", "profile_error", "profile_reported_at",
+		).Update(&model.Device{
+			ProfileReceivedRevision: receivedRevision,
+			ProfileAppliedRevision:  appliedRevision,
+			ProfileFailedRevision:   status.FailedRevision,
+			ProfileApplyStatus:      status.ApplyStatus,
+			ProfileActiveSource:     status.ActiveSource,
+			ProfileConnected:        status.Connected,
+			ProfileFingerprint:      status.Fingerprint,
+			ProfileError:            status.LastError,
+			ProfileReportedAt:       time.Now(),
 		})
 	}
 	if status := form.PasswordStatus; status != nil && credential.RegistrationType == "desktop_token" {

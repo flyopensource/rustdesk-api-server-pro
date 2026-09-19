@@ -165,9 +165,14 @@ declare namespace Api {
       profile_relay_server: string;
       profile_key_set: boolean;
       profile_password_set: boolean;
+      profile_received_revision: number;
       profile_applied_revision: number;
+      profile_failed_revision: number;
+      profile_apply_status: string;
       profile_active_source: string;
       profile_connected: boolean;
+      profile_fingerprint: string;
+      profile_error: string;
       profile_reported_at: string;
       password_applied_revision: number;
       password_apply_status: string;

@@ -20,9 +20,15 @@ type PasswordStatusForm struct {
 }
 
 type ServerProfileStatusForm struct {
-	PolicyRevision int64  `json:"policy_revision"`
-	ActiveSource   string `json:"active_source"`
-	Connected      bool   `json:"connected"`
+	PolicyRevision   int64  `json:"policy_revision"`
+	ReceivedRevision int64  `json:"received_revision"`
+	AppliedRevision  int64  `json:"applied_revision"`
+	FailedRevision   int64  `json:"failed_revision"`
+	ApplyStatus      string `json:"apply_status"`
+	ActiveSource     string `json:"active_source"`
+	Connected        bool   `json:"connected"`
+	Fingerprint      string `json:"fingerprint"`
+	LastError        string `json:"last_error"`
 }
 
 type UnattendedStatusForm struct {
