@@ -1,3 +1,12 @@
 .idea
 .DS_Store
 build
+
+# Private requirements, planning, and development progress live outside this repository.
+/docs/device-group-policy-redesign.md
+/docs/device-management-progress.md
+/docs/device-management-todo.md
+
+# Local release packages are never source inputs.
+/linux-amd64.zip
+/linux-amd64-static.zip
