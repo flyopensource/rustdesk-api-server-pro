@@ -2,16 +2,19 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { NButton, NFlex, NSelect, NTag } from 'naive-ui';
 import {
+  createDesktopEnrollmentToken,
   createDeviceGroup,
   createServerProfile,
   deleteDeviceGroup,
   deleteDeviceRecord,
   deleteServerProfile,
+  fetchDesktopEnrollmentTokens,
   fetchDeviceAlias,
   fetchDeviceGroups,
   fetchDevicesList,
   fetchServerProfilePreview,
   fetchServerProfiles,
+  revokeDesktopEnrollmentToken,
   updateDeviceAlias,
   updateDeviceEnabled,
   updateDeviceGroup,
@@ -32,6 +35,16 @@ const profilesVisible = ref(false);
 const groupsVisible = ref(false);
 const previewVisible = ref(false);
 const preview = ref<Api.Devices.ServerProfilePreview | null>(null);
+const enrollmentTokensVisible = ref(false);
+const enrollmentTokensLoading = ref(false);
+const enrollmentTokenSaving = ref(false);
+const enrollmentTokens = ref<Api.Devices.DesktopEnrollmentToken[]>([]);
+const createdEnrollmentToken = ref<Api.Devices.CreatedDesktopEnrollmentToken | null>(null);
+const enrollmentTokenForm = reactive<{ group_id: number; note: string; expires_at: number | null }>({
+  group_id: 0,
+  note: '',
+  expires_at: Date.now() + 7 * 24 * 60 * 60 * 1000
+});
 const currentApiServer = window.location.origin;
 const aliasVisible = ref(false);
 const deleteVisible = ref(false);
@@ -138,6 +151,113 @@ const groupOptions = computed(() => [
   }))
 ]);
 const editingGroupImpact = computed(() => groups.value.find(item => item.id === groupForm.id));
+const enrollmentGroupOptions = computed(() => [
+  { label: '注册后不指定设备组', value: 0 },
+  ...groups.value.map(item => ({
+    label: item.enabled ? item.name : `${item.name}（已停用）`,
+    value: item.id,
+    disabled: !item.enabled
+  }))
+]);
+
+function formatDate(value: string) {
+  if (!value || value.startsWith('0001-')) return '-';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString('zh-CN', { hour12: false });
+}
+
+function enrollmentStatusLabel(status: Api.Devices.DesktopEnrollmentToken['status']) {
+  return { unused: '未使用', consumed: '已使用', revoked: '已撤销', expired: '已过期' }[status];
+}
+
+function enrollmentStatusType(status: Api.Devices.DesktopEnrollmentToken['status']): 'success' | 'warning' | 'error' | 'default' {
+  return { unused: 'success', consumed: 'default', revoked: 'error', expired: 'warning' }[status] as
+    | 'success'
+    | 'warning'
+    | 'error'
+    | 'default';
+}
+
+function passwordStatusLabel(status: string) {
+  return {
+    unchanged: '无需变更',
+    applying: '应用中',
+    success: '下发成功',
+    cleared: '已清除',
+    failed: '失败'
+  }[status] || '未上报';
+}
+
+function passwordStatusType(status: string): 'success' | 'warning' | 'error' | 'info' | 'default' {
+  if (status === 'success' || status === 'cleared' || status === 'unchanged') return 'success';
+  if (status === 'failed') return 'error';
+  if (status === 'applying') return 'info';
+  return 'default';
+}
+
+async function loadEnrollmentTokens() {
+  enrollmentTokensLoading.value = true;
+  try {
+    const { data: result } = await fetchDesktopEnrollmentTokens();
+    enrollmentTokens.value = result?.tokens || [];
+  } finally {
+    enrollmentTokensLoading.value = false;
+  }
+}
+
+async function openEnrollmentTokens() {
+  createdEnrollmentToken.value = null;
+  enrollmentTokensVisible.value = true;
+  await loadEnrollmentTokens();
+}
+
+async function createEnrollmentToken() {
+  if (!enrollmentTokenForm.expires_at || enrollmentTokenForm.expires_at <= Date.now()) {
+    window.$message?.warning('请选择未来的失效时间');
+    return;
+  }
+  enrollmentTokenSaving.value = true;
+  try {
+    const { data: result, error } = await createDesktopEnrollmentToken({
+      group_id: enrollmentTokenForm.group_id,
+      note: enrollmentTokenForm.note.trim(),
+      expires_at: Math.floor(enrollmentTokenForm.expires_at / 1000)
+    });
+    if (error || !result) return;
+    createdEnrollmentToken.value = result;
+    enrollmentTokenForm.note = '';
+    window.$message?.success('一次性桌面注册令牌已创建');
+    await loadEnrollmentTokens();
+  } finally {
+    enrollmentTokenSaving.value = false;
+  }
+}
+
+async function copyEnrollmentToken() {
+  if (!createdEnrollmentToken.value) return;
+  try {
+    await navigator.clipboard.writeText(createdEnrollmentToken.value.token);
+    window.$message?.success('令牌已复制');
+  } catch {
+    window.$message?.error('复制失败，请手动复制');
+  }
+}
+
+function revokeEnrollmentToken(token: Api.Devices.DesktopEnrollmentToken) {
+  window.$dialog?.warning({
+    title: '撤销桌面注册令牌',
+    content: `确认撤销 ${token.selector}？撤销后不能恢复。`,
+    positiveText: '确认撤销',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      const { error } = await revokeDesktopEnrollmentToken(token.id);
+      if (error) return false;
+      window.$message?.success('令牌已撤销');
+      await loadEnrollmentTokens();
+      return true;
+    }
+  });
+}
 
 async function loadStrategy() {
   const [profileResponse, groupResponse] = await Promise.all([fetchServerProfiles(), fetchDeviceGroups()]);
@@ -299,6 +419,14 @@ const {
     { key: 'hostname', width: 180, title: $t('dataMap.device.hostname'), align: 'center', ellipsis: { tooltip: true } },
     { key: 'username', width: 140, title: $t('dataMap.device.username'), align: 'center', ellipsis: { tooltip: true } },
     { key: 'version', width: 130, title: $t('dataMap.device.version'), align: 'center', ellipsis: { tooltip: true } },
+    { key: 'platform', width: 170, title: '客户端类型', align: 'center', render: row => (
+      <NFlex vertical size={4} align="center">
+        <span>{row.platform || row.os || '-'}/{row.arch || '-'}</span>
+        <NTag size="small" type={row.registration_type === 'desktop_token' ? 'success' : 'default'}>
+          {row.registration_type === 'desktop_token' ? '桌面令牌注册' : row.registration_type || '旧版注册'}
+        </NTag>
+      </NFlex>
+    ) },
     { key: 'disabled', width: 130, title: '管理状态', align: 'center', render: row => (
       <NFlex vertical size={4} align="center">
         <NTag type={row.disabled ? 'warning' : 'success'}>{row.disabled ? '已停用' : '正常'}</NTag>
@@ -370,6 +498,23 @@ const {
       )
     },
     {
+      key: 'password_apply_status',
+      width: 220,
+      title: '桌面固定密码',
+      align: 'center',
+      render: row => row.registration_type === 'desktop_token' ? (
+        <NFlex vertical size={4} align="center">
+          <NTag size="small" type={passwordStatusType(row.password_apply_status)}>
+            {passwordStatusLabel(row.password_apply_status)}
+          </NTag>
+          <span class="text-12px">设备密码：{row.permanent_password_set ? '已设置' : '未设置'}</span>
+          <span class="text-12px">版本：{row.password_applied_revision || 0}/{row.policy_revision || 0}</span>
+          {row.password_error ? <span class="max-w-full break-all text-12px text-error">{row.password_error}</span> : null}
+          <span class="text-12px">{formatDate(row.password_reported_at)}</span>
+        </NFlex>
+      ) : <span class="text-12px">不适用</span>
+    },
+    {
       key: 'profile_connected',
       width: 230,
       title: '应用状态',
@@ -405,6 +550,7 @@ onMounted(loadStrategy);
     <NCard :title="$t('route.devices')" :bordered="false" size="small" class="sm:flex-1-hidden card-wrapper">
       <template #header-extra>
         <NFlex align="center">
+          <NButton size="small" type="primary" @click="openEnrollmentTokens">桌面注册令牌</NButton>
           <NButton size="small" @click="profilesVisible = true">服务器配置</NButton>
           <NButton size="small" @click="groupsVisible = true">设备组</NButton>
           <TableHeader v-model:columns="columnChecks" :loading="loading" @refresh="getData" />
@@ -512,6 +658,54 @@ onMounted(loadStrategy);
           </template>
         </NListItem>
       </NList>
+    </NModal>
+
+    <NModal v-model:show="enrollmentTokensVisible" preset="card" title="一次性桌面注册令牌" class="max-w-95vw w-980px">
+      <NAlert type="warning" class="mb-16px" :show-icon="false">
+        明文令牌只在创建成功后显示这一次。每个令牌只能注册一台桌面设备；请不要截图、写入日志或提交到代码仓库。
+      </NAlert>
+      <NForm label-placement="left" label-width="100">
+        <NGrid :cols="2" :x-gap="16" responsive="screen" item-responsive>
+          <NFormItemGi span="2 m:1" label="注册后设备组">
+            <NSelect v-model:value="enrollmentTokenForm.group_id" :options="enrollmentGroupOptions" />
+          </NFormItemGi>
+          <NFormItemGi span="2 m:1" label="失效时间">
+            <NDatePicker v-model:value="enrollmentTokenForm.expires_at" type="datetime" :clearable="false" class="w-full" />
+          </NFormItemGi>
+        </NGrid>
+        <NFormItem label="备注">
+          <NInput v-model:value="enrollmentTokenForm.note" maxlength="255" show-count placeholder="用途、交付对象或工单号；不要填写密码" />
+        </NFormItem>
+        <NFlex justify="end">
+          <NButton type="primary" :loading="enrollmentTokenSaving" @click="createEnrollmentToken">创建一次性令牌</NButton>
+        </NFlex>
+      </NForm>
+
+      <NAlert v-if="createdEnrollmentToken" type="success" class="my-16px" title="请立即复制并妥善交付">
+        <NFlex vertical>
+          <NInput :value="createdEnrollmentToken.token" readonly />
+          <NFlex justify="end"><NButton type="primary" @click="copyEnrollmentToken">复制令牌</NButton></NFlex>
+        </NFlex>
+      </NAlert>
+
+      <NDivider>最近令牌（不含明文）</NDivider>
+      <NSpin :show="enrollmentTokensLoading">
+        <NTable striped :single-line="false" size="small">
+          <thead><tr><th>选择器</th><th>设备组</th><th>备注</th><th>状态</th><th>失效时间</th><th>使用设备</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr v-for="token in enrollmentTokens" :key="token.id">
+              <td>{{ token.selector }}</td>
+              <td>{{ groups.find(group => group.id === token.group_id)?.name || (token.group_id ? `#${token.group_id}` : '未指定') }}</td>
+              <td class="max-w-240px break-all">{{ token.note || '-' }}</td>
+              <td><NTag size="small" :type="enrollmentStatusType(token.status)">{{ enrollmentStatusLabel(token.status) }}</NTag></td>
+              <td>{{ formatDate(token.expires_at) }}</td>
+              <td>{{ token.consumed_device_id || '-' }}</td>
+              <td><NButton v-if="token.status === 'unused'" size="small" type="error" @click="revokeEnrollmentToken(token)">撤销</NButton></td>
+            </tr>
+            <tr v-if="!enrollmentTokens.length"><td colspan="7" class="text-center">暂无令牌</td></tr>
+          </tbody>
+        </NTable>
+      </NSpin>
     </NModal>
 
     <NModal v-model:show="deleteVisible" preset="card" title="删除设备管理记录" class="max-w-95vw w-600px" :mask-closable="!deleteSaving" :closable="!deleteSaving">

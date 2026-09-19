@@ -59,3 +59,19 @@ export function deleteServerProfile(id: number) {
 export function fetchServerProfilePreview(device_id: number) {
   return request<Api.Devices.ServerProfilePreview>({ url: '/devices/policy-preview', params: { device_id } });
 }
+
+export function fetchDesktopEnrollmentTokens() {
+  return request<Api.Devices.DesktopEnrollmentTokensResult>({ url: '/devices/desktop-enrollment-tokens' });
+}
+
+export function createDesktopEnrollmentToken(data: Api.Devices.DesktopEnrollmentTokenInput) {
+  return request<Api.Devices.CreatedDesktopEnrollmentToken>({
+    url: '/devices/desktop-enrollment-tokens',
+    method: 'post',
+    data
+  });
+}
+
+export function revokeDesktopEnrollmentToken(id: number) {
+  return request({ url: '/devices/desktop-enrollment-tokens', method: 'delete', params: { id } });
+}

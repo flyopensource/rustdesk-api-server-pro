@@ -66,6 +66,20 @@ func (c *DevicesController) HandleList() mvc.Result {
 	if err != nil {
 		return c.Error(nil, err.Error())
 	}
+	registrationTypes := make(map[int]string, len(deviceList))
+	if len(deviceList) > 0 {
+		deviceIDs := make([]int, 0, len(deviceList))
+		for _, device := range deviceList {
+			deviceIDs = append(deviceIDs, device.Id)
+		}
+		credentials := make([]model.DeviceCredential, 0, len(deviceList))
+		if err = c.Db.In("device_id", deviceIDs).Cols("device_id", "registration_type").Find(&credentials); err != nil {
+			return c.Error(nil, err.Error())
+		}
+		for _, credential := range credentials {
+			registrationTypes[credential.DeviceId] = credential.RegistrationType
+		}
+	}
 
 	list := make([]iris.Map, 0)
 	for _, a := range deviceList {
@@ -83,50 +97,58 @@ func (c *DevicesController) HandleList() mvc.Result {
 			groupName, groupEnabled = group.Name, group.Enabled
 		}
 		list = append(list, iris.Map{
-			"id":                       a.Id,
-			"rustdesk_id":              a.RustdeskId,
-			"hostname":                 a.Hostname,
-			"alias":                    a.Alias,
-			"username":                 a.Username,
-			"uuid":                     a.Uuid,
-			"version":                  a.Version,
-			"os":                       a.Os,
-			"memory":                   a.Memory,
-			"created_at":               a.CreatedAt.Format(config.TimeFormat),
-			"is_online":                a.IsOnline,
-			"disabled":                 a.Disabled,
-			"unattended_enabled":       effective.UnattendedEnabled,
-			"root_command":             effective.RootCommand,
-			"policy_revision":          effective.Revision,
-			"applied_revision":         a.AppliedRevision,
-			"unattended_status":        a.UnattendedStatus,
-			"root_executor":            a.RootExecutor,
-			"root_available":           a.RootAvailable,
-			"screen_capture_ready":     a.ScreenCaptureReady,
-			"accessibility_ready":      a.AccessibilityReady,
-			"all_files_access_ready":   a.AllFilesAccessReady,
-			"service_running":          a.ServiceRunning,
-			"unattended_error":         a.UnattendedError,
-			"unattended_reported_at":   a.UnattendedReportedAt.Format(config.TimeFormat),
-			"group_id":                 a.StrategyGroupId,
-			"group_name":               groupName,
-			"group_enabled":            groupEnabled,
-			"effective_group_id":       effective.GroupID,
-			"effective_group_name":     effective.GroupName,
-			"group_source":             effective.GroupSource,
-			"group_warning":            effective.GroupWarning,
-			"profile_enabled":          effective.ProfileEnabled,
-			"profile_id":               effective.Profile.ID,
-			"profile_name":             effective.Profile.Name,
-			"profile_source":           effective.ProfileSource,
-			"profile_id_server":        effective.Profile.IDServer,
-			"profile_relay_server":     effective.Profile.RelayServer,
-			"profile_key_set":          effective.Profile.ServerKey != "",
-			"profile_password_set":     effective.PasswordCiphertext != "",
-			"profile_applied_revision": a.ProfileAppliedRevision,
-			"profile_active_source":    a.ProfileActiveSource,
-			"profile_connected":        a.ProfileConnected,
-			"profile_reported_at":      a.ProfileReportedAt.Format(config.TimeFormat),
+			"id":                        a.Id,
+			"rustdesk_id":               a.RustdeskId,
+			"hostname":                  a.Hostname,
+			"alias":                     a.Alias,
+			"username":                  a.Username,
+			"uuid":                      a.Uuid,
+			"version":                   a.Version,
+			"os":                        a.Os,
+			"memory":                    a.Memory,
+			"platform":                  a.Platform,
+			"arch":                      a.Arch,
+			"registration_type":         registrationTypes[a.Id],
+			"created_at":                a.CreatedAt.Format(config.TimeFormat),
+			"is_online":                 a.IsOnline,
+			"disabled":                  a.Disabled,
+			"unattended_enabled":        effective.UnattendedEnabled,
+			"root_command":              effective.RootCommand,
+			"policy_revision":           effective.Revision,
+			"applied_revision":          a.AppliedRevision,
+			"unattended_status":         a.UnattendedStatus,
+			"root_executor":             a.RootExecutor,
+			"root_available":            a.RootAvailable,
+			"screen_capture_ready":      a.ScreenCaptureReady,
+			"accessibility_ready":       a.AccessibilityReady,
+			"all_files_access_ready":    a.AllFilesAccessReady,
+			"service_running":           a.ServiceRunning,
+			"unattended_error":          a.UnattendedError,
+			"unattended_reported_at":    a.UnattendedReportedAt.Format(config.TimeFormat),
+			"group_id":                  a.StrategyGroupId,
+			"group_name":                groupName,
+			"group_enabled":             groupEnabled,
+			"effective_group_id":        effective.GroupID,
+			"effective_group_name":      effective.GroupName,
+			"group_source":              effective.GroupSource,
+			"group_warning":             effective.GroupWarning,
+			"profile_enabled":           effective.ProfileEnabled,
+			"profile_id":                effective.Profile.ID,
+			"profile_name":              effective.Profile.Name,
+			"profile_source":            effective.ProfileSource,
+			"profile_id_server":         effective.Profile.IDServer,
+			"profile_relay_server":      effective.Profile.RelayServer,
+			"profile_key_set":           effective.Profile.ServerKey != "",
+			"profile_password_set":      effective.PasswordCiphertext != "",
+			"profile_applied_revision":  a.ProfileAppliedRevision,
+			"profile_active_source":     a.ProfileActiveSource,
+			"profile_connected":         a.ProfileConnected,
+			"profile_reported_at":       a.ProfileReportedAt.Format(config.TimeFormat),
+			"password_applied_revision": a.PasswordAppliedRevision,
+			"password_apply_status":     a.PasswordApplyStatus,
+			"permanent_password_set":    a.PermanentPasswordSet,
+			"password_error":            a.PasswordError,
+			"password_reported_at":      a.PasswordReportedAt.Format(config.TimeFormat),
 		})
 	}
 	return c.Success(iris.Map{

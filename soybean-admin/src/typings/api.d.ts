@@ -131,6 +131,9 @@ declare namespace Api {
       version: string;
       os: string;
       memory: string;
+      platform: string;
+      arch: string;
+      registration_type: string;
       created_at: string;
       is_online: boolean;
       disabled: boolean;
@@ -166,6 +169,11 @@ declare namespace Api {
       profile_active_source: string;
       profile_connected: boolean;
       profile_reported_at: string;
+      password_applied_revision: number;
+      password_apply_status: string;
+      permanent_password_set: boolean;
+      password_error: string;
+      password_reported_at: string;
     }>;
     type DevicesList = Common.PaginatingQueryRecord<Device>;
 
@@ -234,6 +242,25 @@ declare namespace Api {
       relay_server: string;
       server_key: string;
       password_set: boolean;
+    };
+    type DesktopEnrollmentToken = {
+      id: number;
+      selector: string;
+      group_id: number;
+      note: string;
+      status: 'unused' | 'consumed' | 'revoked' | 'expired';
+      expires_at: string;
+      consumed_at: string;
+      consumed_device_id: number;
+      created_at: string;
+    };
+    type DesktopEnrollmentTokensResult = { tokens: DesktopEnrollmentToken[] };
+    type DesktopEnrollmentTokenInput = { expires_at: number; group_id: number; note: string };
+    type CreatedDesktopEnrollmentToken = {
+      id: number;
+      token: string;
+      group_id: number;
+      expires_at: string;
     };
     type DeviceSearchParams = CommonType.RecordNullable<
       Pick<Api.Devices.Device, 'username' | 'hostname' | 'rustdesk_id' | 'alias'> & { state: string } & Api.Common.CommonSearchParams

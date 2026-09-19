@@ -5,7 +5,9 @@ test('device alias, cancellation, state and deletion with mocked APIs only', asy
     id: 1, rustdesk_id: '123456789', alias: '旧名称', hostname: 'mock-board', username: 'mock',
     disabled: false, is_online: false, group_id: 0, effective_group_id: 0, effective_group_name: '',
     group_source: 'none', group_warning: '', profile_name: '', profile_id_server: '', profile_password_set: false,
-    all_files_access_ready: false, unattended_enabled: false, root_command: 'auto'
+    all_files_access_ready: false, unattended_enabled: false, root_command: 'auto', platform: 'desktop', arch: 'x86_64',
+    registration_type: 'desktop_token', password_apply_status: 'success', password_applied_revision: 9,
+    permanent_password_set: true, password_error: '', password_reported_at: '2026-09-19T08:00:00Z', policy_revision: 9
   };
   const group = {
     id: 2, name: 'android-board', enabled: true, is_default: true, member_count: 0, default_coverage_count: 1,
@@ -13,11 +15,13 @@ test('device alias, cancellation, state and deletion with mocked APIs only', asy
     password_set: true, root_command: 'auto', configuration_complete: true
   };
   const writes: { path: string; body: any }[] = [];
+  const enrollmentTokens: any[] = [];
   let removed = false;
   await page.addInitScript(() => {
     localStorage.setItem('SOY_token', JSON.stringify('mock-admin-token'));
     localStorage.setItem('SOY_lang', JSON.stringify('zh-CN'));
   });
+  // eslint-disable-next-line complexity
   await page.route('**/proxy-default/**', async route => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace('/proxy-default', '');
@@ -34,6 +38,22 @@ test('device alias, cancellation, state and deletion with mocked APIs only', asy
       Object.assign(group, body);
     } else if (path === '/devices/server-profiles') {
       data = { profiles: [{ id: 1, name: 'cn-jun', id_server: 'id.example.com', relay_server: 'relay.example.com', server_key: 'key', enabled: true, group_count: 1 }] };
+    } else if (path === '/devices/desktop-enrollment-tokens' && method === 'GET') {
+      data = { tokens: enrollmentTokens };
+    } else if (path === '/devices/desktop-enrollment-tokens' && method === 'POST') {
+      const body = route.request().postDataJSON();
+      writes.push({ path, body });
+      enrollmentTokens.unshift({
+        id: 30, selector: 'desk-selector', group_id: body.group_id, note: body.note, status: 'unused',
+        expires_at: new Date(body.expires_at * 1000).toISOString(), consumed_at: '', consumed_device_id: 0,
+        created_at: new Date().toISOString()
+      });
+      data = { id: 30, token: 'rdet_mock-one-time-secret', group_id: body.group_id, expires_at: enrollmentTokens[0].expires_at };
+    } else if (path === '/devices/desktop-enrollment-tokens' && method === 'DELETE') {
+      const id = Number(url.searchParams.get('id'));
+      const token = enrollmentTokens.find(item => item.id === id);
+      if (token) token.status = 'revoked';
+      writes.push({ path, body: { id } });
     } else if (path === '/devices/alias' && method === 'GET') {
       data = {
         alias: device.alias, address_book_ids: [10], targets: [{ id: 10, user_id: 2, username: 'alice', name: 'My address book', enabled: true }]
@@ -49,6 +69,8 @@ test('device alias, cancellation, state and deletion with mocked APIs only', asy
   });
   await page.goto('/#/devices');
   await expect(page.getByRole('button', { name: '编辑别名', exact: true })).toBeVisible();
+  await expect(page.getByText('桌面令牌注册', { exact: true })).toBeVisible();
+  await expect(page.getByText('下发成功', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '编辑别名', exact: true }).click();
   const aliasModal = page.locator('.n-modal').filter({ hasText: '编辑设备别名' });
   await expect(aliasModal).toBeVisible();
@@ -86,4 +108,20 @@ test('device alias, cancellation, state and deletion with mocked APIs only', asy
   await defaultSwitch.click();
   await groupModal.getByRole('button', { name: '保存设备组', exact: true }).click();
   expect(writes.find(item => item.path === '/devices/groups')?.body).toMatchObject({ id: 2, is_default: false });
+  await groupModal.locator('.n-base-close').click();
+  await expect(groupModal).toBeHidden();
+
+  await page.getByRole('button', { name: '桌面注册令牌', exact: true }).click();
+  const tokenModal = page.locator('.n-modal').filter({ hasText: '一次性桌面注册令牌' });
+  await expect(tokenModal).toBeVisible();
+  await tokenModal.getByPlaceholder('用途、交付对象或工单号；不要填写密码').fill('工单-100');
+  await tokenModal.getByRole('button', { name: '创建一次性令牌', exact: true }).click();
+  await expect(tokenModal.locator('input[value="rdet_mock-one-time-secret"]')).toBeVisible();
+  await expect(tokenModal.getByText('desk-selector', { exact: true })).toBeVisible();
+  expect(writes.find(item => item.path === '/devices/desktop-enrollment-tokens' && item.body.note === '工单-100')?.body).toMatchObject({
+    group_id: 0, note: '工单-100'
+  });
+  await tokenModal.getByRole('button', { name: '撤销', exact: true }).click();
+  await page.getByRole('button', { name: '确认撤销', exact: true }).click();
+  await expect(tokenModal.getByText('已撤销', { exact: true })).toBeVisible();
 });
